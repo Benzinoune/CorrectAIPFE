@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { CameraView, useCameraPermissions } from 'expo-camera';
+import * as FileSystem from 'expo-file-system/legacy';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { AppScreen, ScannedCopy, ScannedCopyDraft } from '@/features/correctai/types';
@@ -365,6 +366,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
   const [scanResultVisible, setScanResultVisible] = useState(false);
   const [capturedImageUri, setCapturedImageUri] = useState<string | null>(null);
+  const [stableImageUri, setStableImageUri] = useState<string | null>(null);
   const [capturedCopy, setCapturedCopy] = useState<ScannedCopy | null>(null);
   const [cameraFrozen, setCameraFrozen] = useState(false);
   const [settingsVisible, setSettingsVisible] = useState(false);
@@ -667,6 +669,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           /* -------- Valid document -------- */
           console.log('[Scanner] detect-corners: validation passed -> updating alignment/stability');
           setDetectedCorners(newCorners);
+          setStableImageUri(image.uri);
           setDetectionMessage(data.message ?? 'Document détecté');
           setDetectionConfidence(validation.score);
 
@@ -723,7 +726,9 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           console.log('[Scanner] Validation failed: %s (score=%d)', validation.reason, validation.score);
           if (validation.score > 0) {
             setDetectedCorners(newCorners);
+            setStableImageUri(image.uri);
             setDetectionConfidence(validation.score);
+            setDetectionMessage(validation.reason);
           } else {
             setDetectedCorners([]);
             setDetectionConfidence(0);
@@ -833,17 +838,22 @@ export function ProfessorScannerScreen(props: ScannerProps) {
     console.log('[Scanner] doCapture: autoCaptureDone set, isCapturing set, calling takePictureAsync...');
 
     try {
-      // ── Take a PREVIEW-quality snapshot for the scan ──────────────────────
-      // CRITICAL: We must NOT use a high-res capture for the scan image.
-      // Android cameras use a different Field of View (FOV) for high-res photos
-      // vs. the live preview. The corners were detected on the preview FOV.
-      // Sending a high-res photo with different FOV means the corners will point
-      // to the wrong location → bad crop. 
-      // Solution: take a fresh preview-quality snapshot (same FOV as detection)
-      // and send THAT to /scan along with the pre-detected corners.
-      console.log('[Scanner] doCapture: taking preview-quality snapshot for scan (same FOV as detection)');
-      const image = await camera.takePictureAsync({ quality: SMALL_PICTURE_QUALITY });
-      console.log('[Scanner] takePictureAsync returned:', image ? `uri=${image.uri?.substring(0, 50)}...` : 'null');
+      // ── Use the exact snapshot that was verified as stable ───────────────
+      // CRITICAL: We previously took a new picture here, but network latency
+      // meant the phone could have moved between detection and capture.
+      // This caused the pre-detected corners to map to the wrong locations on
+      // the new image, resulting in a bad crop.
+      // Solution: use the exact same image URI that was saved during the
+      // stable detection tick.
+      console.log('[Scanner] doCapture: using the exact preview-quality snapshot from the stable detection tick');
+      let finalImageUri = stableImageUri;
+      
+      if (!finalImageUri) {
+        console.log('[Scanner] doCapture: stableImageUri is null, taking fallback picture');
+        const fallbackImage = await camera.takePictureAsync({ quality: SMALL_PICTURE_QUALITY });
+        finalImageUri = fallbackImage?.uri ?? null;
+      }
+      console.log('[Scanner] capture image uri:', finalImageUri ? `${finalImageUri.substring(0, 50)}...` : 'null');
 
       let studentName: string | null = null;
       let matricule: string | null = null;
@@ -856,7 +866,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       // It replaces the raw camera frame as the stored scanned copy image.
       let warpedImageUri: string | undefined;
 
-      if (image?.uri && detectedCorners.length === 4) {
+      if (finalImageUri && detectedCorners.length === 4) {
         // ── Unified /scan endpoint ────────────────────────────────────────────
         // We pass the pre-detected corners (from the live preview detection loop)
         // together with the backend frame dimensions so the backend can scale
@@ -872,12 +882,12 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           detectionBackendFrame.width,
           detectionBackendFrame.height,
           questionCount,
-          image.uri.substring(0, 60),
+          finalImageUri.substring(0, 60),
         );
 
         const scanUpload = await uploadScannerMultipart({
           requestUrl: `${OCR_SERVICE_URL}/scan`,
-          imageUri: image.uri,
+          imageUri: finalImageUri,
           label: 'scan',
           fields: {
             questions: questionCount,
@@ -920,7 +930,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           // Save it to the filesystem so it can be used as the imageUri.
           if (scanData.warped_image_base64) {
             try {
-              const { FileSystem } = await import('expo-file-system');
               const warpedPath = `${FileSystem.cacheDirectory}warped_${Date.now()}.jpg`;
               await FileSystem.writeAsStringAsync(
                 warpedPath,
@@ -987,18 +996,18 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           return;
         }
       } else {
-        console.log('[Scanner] Skipping /scan: image?.uri=%s, detectedCorners.length=%d',
-          image?.uri ? 'valid' : 'null', detectedCorners.length);
+        console.log('[Scanner] Skipping /scan: finalImageUri=%s, detectedCorners.length=%d',
+          finalImageUri ? 'valid' : 'null', detectedCorners.length);
       }
 
       console.log('[Scanner] Setting capture state: cameraFrozen=true, scanResultVisible=true');
       console.log('[Scanner] warpedImageUri=%s rawImageUri=%s',
         warpedImageUri ?? 'none',
-        image?.uri?.substring(0, 60) ?? 'none',
+        finalImageUri?.substring(0, 60) ?? 'none',
       );
       // Show the perspective-corrected (warped) image in the frozen preview if available.
       // Otherwise fall back to the raw camera image.
-      const displayImageUri = warpedImageUri ?? image?.uri ?? null;
+      const displayImageUri = warpedImageUri ?? finalImageUri ?? null;
       setCameraFrozen(true);
       setCapturedImageUri(displayImageUri);
       setScanResultVisible(true);
@@ -1018,7 +1027,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
         detectedAnswersCount: answers.length,
         // Use the warped (perspective-corrected) image as the canonical document image.
         // Only fall back to the raw camera frame if perspective correction failed.
-        imageUri: warpedImageUri ?? image?.uri,
+        imageUri: warpedImageUri ?? finalImageUri ?? '',
         ocrResult: ocrResultPayload,
         omrResult: omrResultPayload,
         metadata: { source: 'scanner', processedAt: new Date().toISOString() },
@@ -1084,6 +1093,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
     setScanResultVisible(false);
     setCameraFrozen(false);
     setCapturedImageUri(null);
+    setStableImageUri(null);
     setCapturedCopy(null);
     setDetectionFrameSize({ width: 0, height: 0 });
     setDetectedCorners([]);
