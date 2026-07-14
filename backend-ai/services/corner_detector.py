@@ -1,19 +1,28 @@
 """
 OpenCV-based corner detection for answer sheet quadrilateral extraction.
 
-Pipeline (tried in order until one succeeds):
-  A. CLAHE equalisation  → Adaptive threshold  → morph-close  → contours
-  B. Canny edges         → dilate              → contours
-  C. Otsu threshold      → morph-close         → contours
-  D. Aggressive blur + bilateral filter + Canny (for noisy / low-contrast images)
+Detection strategy (tried in order until one succeeds):
 
-Debug images are ALWAYS saved to backend-ai/debug/ so you can inspect what
-OpenCV actually sees on each request without restarting the server.
+  PRIMARY — Fiducial marker detection (fastest, most robust)
+  ────────────────────────────────────────────────────────────
+  The answer sheet has 4 filled black squares at each corner.
+  We search for them directly:
+    1. Threshold to isolate very dark regions (black markers).
+    2. Find contours that are:
+         • Nearly square (aspect_ratio 0.6-1.5)
+         • Of coherent size (relative to image: 0.001–0.03 of image area)
+         • Highly filled (solidity > 0.75)
+    3. Assign one candidate per quadrant (TL, TR, BR, BL).
+    4. Use the centres of the 4 squares as the perspective transform source.
 
-Every rejection reason is logged so you know exactly which stage fails.
+  FALLBACK A – CLAHE → Adaptive threshold → morph-close → page contour
+  FALLBACK B – Canny edges → dilate → page contour
+  FALLBACK C – Otsu threshold → morph-close → page contour
+  FALLBACK D – Aggressive blur + bilateral filter + Canny → page contour
+
+Debug images are ALWAYS saved to backend-ai/debug/.
 """
 
-import os
 import time
 import traceback
 from dataclasses import dataclass
@@ -39,9 +48,6 @@ class DetectionResult:
     detected: bool
     corners: list[CornerPoint]
     message: str
-    # Width and height of the image that was actually used for
-    # detection.  The caller uses these to scale corners back to
-    # the original image resolution.
     detection_image_width: int = 0
     detection_image_height: int = 0
 
@@ -54,7 +60,7 @@ _DEBUG_DIR = Path(__file__).resolve().parent.parent / "debug"
 
 
 def _debug_save(name: str, image: np.ndarray) -> None:
-    """Always save debug images unconditionally – no env-var gate."""
+    """Always save debug images unconditionally."""
     try:
         _DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         path = str(_DEBUG_DIR / name)
@@ -69,11 +75,6 @@ def _debug_save(name: str, image: np.ndarray) -> None:
 # ---------------------------------------------------------------------------
 
 def _resize_for_detection(image: np.ndarray, target_long_side: int = 1024) -> np.ndarray:
-    """
-    Resize so the longest side is target_long_side.
-    Returns the resized image.  Corner coordinates are returned in the
-    resized-image space; the caller scales back using the ratios.
-    """
     h, w = image.shape[:2]
     long_side = max(h, w)
     if long_side <= target_long_side:
@@ -91,23 +92,225 @@ def _resize_for_detection(image: np.ndarray, target_long_side: int = 1024) -> np
 # ---------------------------------------------------------------------------
 
 def _order_corners(pts: np.ndarray) -> np.ndarray:
-    """
-    Order 4 points as: top-left, top-right, bottom-right, bottom-left.
-    Uses the sum/diff trick which is robust for near-rectangular quads.
-    """
+    """Order 4 points as: top-left, top-right, bottom-right, bottom-left."""
     rect = np.zeros((4, 2), dtype=np.float32)
     s = pts.sum(axis=1)
-    rect[0] = pts[np.argmin(s)]   # top-left  (smallest x+y)
-    rect[2] = pts[np.argmax(s)]   # bottom-right (largest x+y)
+    rect[0] = pts[np.argmin(s)]   # top-left
+    rect[2] = pts[np.argmax(s)]   # bottom-right
     d = np.diff(pts, axis=1)
-    rect[1] = pts[np.argmin(d)]   # top-right  (smallest y-x)
-    rect[3] = pts[np.argmax(d)]   # bottom-left (largest y-x)
+    rect[1] = pts[np.argmin(d)]   # top-right
+    rect[3] = pts[np.argmax(d)]   # bottom-left
     return rect
 
 
-# ---------------------------------------------------------------------------
-# Contour validation
-# ---------------------------------------------------------------------------
+# ===========================================================================
+# PRIMARY: Fiducial square marker detection
+# ===========================================================================
+
+def _find_black_squares(
+    gray: np.ndarray,
+    det_image: np.ndarray,
+    image_area: float,
+    threshold_value: int = 60,
+    label: str = "thresh",
+) -> Optional[list[CornerPoint]]:
+    """
+    Detect 4 black square fiducial markers (one per corner quadrant).
+
+    Parameters
+    ----------
+    gray          : grayscale detection image
+    det_image     : colour detection image (for debug drawing only)
+    image_area    : float, width * height of det_image
+    threshold_value: pixel darkness threshold (0=black). Lower = stricter.
+    label         : string tag for debug output
+
+    Returns
+    -------
+    List of 4 CornerPoints (TL, TR, BR, BL) if found, else None.
+    """
+    h, w = gray.shape[:2]
+
+    # ── 1. Threshold to isolate dark regions ─────────────────────────────────
+    _, binary = cv2.threshold(gray, threshold_value, 255, cv2.THRESH_BINARY_INV)
+
+    # Small morphological close to fill tiny holes inside the marker
+    kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+    binary = cv2.morphologyEx(binary, cv2.MORPH_CLOSE, kernel, iterations=1)
+
+    _debug_save(f"fid_{label}_binary.jpg", binary)
+
+    # ── 2. Find contours ─────────────────────────────────────────────────────
+    contours, _ = cv2.findContours(binary, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    print(f"[corner] fiducial/{label}: total contours={len(contours)}")
+
+    # ── 3. Filter by shape: square-ish, right size, high solidity ────────────
+    # Marker size: between 0.015% and 3% of image area.
+    # At 1024px long side on a 730x960 image (~700k px²):
+    #   0.015% ~ 105 px² ~ 10x10 markers
+    #   3.0%   ~ 21 000 px² ~ 145x145 markers (very close shot)
+    min_area = image_area * 0.00015   # 0.015%
+    max_area = image_area * 0.040     # 4%
+
+    candidates = []
+    for cnt in contours:
+        area = cv2.contourArea(cnt)
+        if area < min_area or area > max_area:
+            continue
+
+        x, y, bw, bh = cv2.boundingRect(cnt)
+        if bh == 0:
+            continue
+
+        aspect = bw / bh
+        if aspect < 0.6 or aspect > 1.5:
+            continue  # not square enough
+
+        # Solidity: how much of the bounding rect is filled
+        hull_area = cv2.contourArea(cv2.convexHull(cnt))
+        if hull_area < 1:
+            continue
+        solidity = area / hull_area
+        if solidity < 0.75:
+            continue  # not a solid square (e.g. circle, open shape)
+
+        cx = x + bw // 2
+        cy = y + bh // 2
+        candidates.append({
+            "cx": cx, "cy": cy,
+            "area": area, "aspect": aspect, "solidity": solidity,
+            "bw": bw, "bh": bh,
+        })
+
+    print(f"[corner] fiducial/{label}: {len(candidates)} square candidates after filtering")
+
+    if len(candidates) < 4:
+        print(f"[corner] fiducial/{label}: not enough candidates ({len(candidates)} < 4)")
+        return None
+
+    # ── 4. Assign one candidate per quadrant ─────────────────────────────────
+    mid_x = w / 2
+    mid_y = h / 2
+
+    quadrants: dict[str, list[dict]] = {"TL": [], "TR": [], "BL": [], "BR": []}
+    for c in candidates:
+        qx = "L" if c["cx"] < mid_x else "R"
+        qy = "T" if c["cy"] < mid_y else "B"
+        quadrants[f"{qy}{qx}"].append(c)
+
+    # Pick the best candidate in each quadrant (largest area = most prominent)
+    corners_map: dict[str, Optional[dict]] = {}
+    for q, cands in quadrants.items():
+        if not cands:
+            print(f"[corner] fiducial/{label}: no candidate in quadrant {q}")
+            corners_map[q] = None
+        else:
+            # Sort by area descending, pick the largest
+            best = sorted(cands, key=lambda c: c["area"], reverse=True)[0]
+            corners_map[q] = best
+            print(
+                f"[corner] fiducial/{label}: quadrant {q} -> "
+                f"cx={best['cx']} cy={best['cy']} area={best['area']:.0f} "
+                f"aspect={best['aspect']:.2f} solidity={best['solidity']:.2f}"
+            )
+
+    if any(v is None for v in corners_map.values()):
+        missing = [k for k, v in corners_map.items() if v is None]
+        print(f"[corner] fiducial/{label}: missing quadrants {missing} → fail")
+        return None
+
+    # ── 5. Build result in TL, TR, BR, BL order ──────────────────────────────
+    tl = corners_map["TL"]
+    tr = corners_map["TR"]
+    br = corners_map["BR"]
+    bl = corners_map["BL"]
+
+    result = [
+        CornerPoint(x=tl["cx"], y=tl["cy"]),
+        CornerPoint(x=tr["cx"], y=tr["cy"]),
+        CornerPoint(x=br["cx"], y=br["cy"]),
+        CornerPoint(x=bl["cx"], y=bl["cy"]),
+    ]
+
+    # ── 6. Sanity check: corners should form a reasonable quadrilateral ───────
+    # The TL marker should be left of TR, BL should be left of BR, etc.
+    if not (tl["cx"] < tr["cx"] and bl["cx"] < br["cx"]):
+        print(f"[corner] fiducial/{label}: x-order sanity failed")
+        return None
+    if not (tl["cy"] < bl["cy"] and tr["cy"] < br["cy"]):
+        print(f"[corner] fiducial/{label}: y-order sanity failed")
+        return None
+
+    # The quad should occupy at least 5% of the image area
+    pts = np.array([[c.x, c.y] for c in result], dtype=np.float32)
+    quad_area = cv2.contourArea(pts)
+    if quad_area < image_area * 0.05:
+        print(f"[corner] fiducial/{label}: quad_area={quad_area:.0f} < 5% of image → too small")
+        return None
+
+    # ── 7. Debug: draw found markers ─────────────────────────────────────────
+    vis = det_image.copy()
+    for i, cp in enumerate(result):
+        label_text = ["TL", "TR", "BR", "BL"][i]
+        cv2.circle(vis, (cp.x, cp.y), 10, (0, 255, 0), -1)
+        cv2.putText(vis, f"{label_text}({cp.x},{cp.y})", (cp.x + 5, cp.y - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+    cv2.polylines(vis, [np.array([(c.x, c.y) for c in result], dtype=np.int32)],
+                  isClosed=True, color=(0, 255, 0), thickness=2)
+    _debug_save(f"fid_{label}_result.jpg", vis)
+
+    print(f"[corner] fiducial/{label}: SUCCESS corners={[(c.x, c.y) for c in result]}")
+    return result
+
+
+def _detect_fiducial_markers(
+    det_image: np.ndarray,
+    gray: np.ndarray,
+    image_area: float,
+) -> Optional[list[CornerPoint]]:
+    """
+    Try multiple preprocessing variants to detect the 4 black square markers.
+
+    Returns list of 4 CornerPoint on success, None on failure.
+    """
+    print("[corner] ── Pipeline FIDUCIAL: black-square marker detection ────────")
+
+    # Variant 1: direct dark threshold on original gray
+    result = _find_black_squares(gray, det_image, image_area, threshold_value=60, label="v1_raw60")
+    if result:
+        return result
+
+    # Variant 2: slightly more lenient threshold
+    result = _find_black_squares(gray, det_image, image_area, threshold_value=80, label="v2_raw80")
+    if result:
+        return result
+
+    # Variant 3: CLAHE equalised gray (improves contrast under bad lighting)
+    clahe = cv2.createCLAHE(clipLimit=3.0, tileGridSize=(8, 8))
+    gray_clahe = clahe.apply(gray)
+    result = _find_black_squares(gray_clahe, det_image, image_area, threshold_value=70, label="v3_clahe70")
+    if result:
+        return result
+
+    # Variant 4: Gaussian blur before thresholding (reduces noise false-positives)
+    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
+    result = _find_black_squares(blurred, det_image, image_area, threshold_value=65, label="v4_blur65")
+    if result:
+        return result
+
+    # Variant 5: CLAHE + blur, even more lenient threshold
+    gray_clahe_blurred = cv2.GaussianBlur(gray_clahe, (5, 5), 0)
+    result = _find_black_squares(gray_clahe_blurred, det_image, image_area, threshold_value=90, label="v5_clahe_blur90")
+    if result:
+        return result
+
+    print("[corner] fiducial: ALL variants failed")
+    return None
+
+
+# ===========================================================================
+# FALLBACK: original full-page contour detection pipelines
+# ===========================================================================
 
 def _is_valid_sheet(
     contour: np.ndarray,
@@ -117,17 +320,8 @@ def _is_valid_sheet(
     epsilon_ratio: float = 0.05,
 ) -> tuple[bool, str, Optional[np.ndarray]]:
     """
-    Validate a contour as a document sheet.
-
+    Validate a contour as a document sheet (4-vertex convex quad).
     Returns (valid, reason_string, approx_4pts_or_None).
-    The approx array is returned so the caller does not re-run approxPolyDP.
-
-    Tuning notes
-    ────────────
-    • epsilon_ratio = 0.05  → tolerates moderately rounded physical corners
-      without collapsing real quadrilaterals into triangles.
-    • min_area_ratio = 0.03 → 3% of image area; allows documents held
-      farther from the camera or held at a steeper angle.
     """
     peri = cv2.arcLength(contour, closed=True)
     if peri < 100:
@@ -137,8 +331,6 @@ def _is_valid_sheet(
     vertices = len(approx)
 
     if vertices != 4:
-        # Try a slightly tighter epsilon before giving up — sometimes a large
-        # epsilon merges two sides into one.
         for alt_eps in [0.04, 0.03, 0.06, 0.07]:
             alt_approx = cv2.approxPolyDP(contour, epsilon=alt_eps * peri, closed=True)
             if len(alt_approx) == 4:
@@ -158,12 +350,9 @@ def _is_valid_sheet(
     if area_ratio > max_area_ratio:
         return False, f"area_ratio={area_ratio:.4f} > {max_area_ratio} (fills entire frame)", None
 
-    # Convexity check – a document should be convex
     if not cv2.isContourConvex(approx):
         return False, "contour not convex", None
 
-    # Aspect-ratio sanity: avoid detecting very thin or very wide shapes.
-    # A document in perspective can have ratios from ~0.2 to ~5.0.
     x, y, bw, bh = cv2.boundingRect(approx)
     if bh == 0:
         return False, "degenerate bounding rect (h=0)", None
@@ -174,47 +363,20 @@ def _is_valid_sheet(
     return True, f"area_ratio={area_ratio:.4f} vertices={vertices} aspect={aspect:.2f}", approx
 
 
-# ---------------------------------------------------------------------------
-# Contour search
-# ---------------------------------------------------------------------------
-
 def _detect_from_edges(
     edge_image: np.ndarray,
     image_area: float,
     label: str,
     min_area_ratio: float = 0.03,
 ) -> Optional[np.ndarray]:
-    """
-    Find the largest quadrilateral contour in an edge/binary image.
-    Returns the raw contour (not approxPolyDP) if found, None otherwise.
-
-    Logs rejection reason for every examined contour.
-    """
+    """Find the largest valid quadrilateral contour in an edge/binary image."""
     contours, _ = cv2.findContours(edge_image, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     print(f"[corner] {label}: total contours found={len(contours)}")
 
     if not contours:
-        print(f"[corner] {label}: no contours at all")
         return None
 
-    # Sort by area descending and examine top-30
     contours_sorted = sorted(contours, key=cv2.contourArea, reverse=True)[:30]
-
-    print(f"[corner] {label}: examining top-{len(contours_sorted)} contours by area:")
-    for i, c in enumerate(contours_sorted[:8]):
-        area = cv2.contourArea(c)
-        peri = cv2.arcLength(c, closed=True)
-        # Quick vertex count at multiple epsilons for diagnosis
-        v04 = len(cv2.approxPolyDP(c, 0.04 * peri, True))
-        v05 = len(cv2.approxPolyDP(c, 0.05 * peri, True))
-        v03 = len(cv2.approxPolyDP(c, 0.03 * peri, True))
-        x, y, bw, bh = cv2.boundingRect(c)
-        aspect = bw / bh if bh > 0 else 0
-        print(
-            f"  [{i}] area={int(area)} area_ratio={area/image_area:.4f} "
-            f"perimeter={peri:.0f} vertices(eps 0.03/0.04/0.05)={v03}/{v04}/{v05} "
-            f"aspect={aspect:.2f}"
-        )
 
     for i, contour in enumerate(contours_sorted):
         area = cv2.contourArea(contour)
@@ -223,26 +385,16 @@ def _detect_from_edges(
             print(f"[corner] {label}: ACCEPTED contour[{i}] area_ratio={area/image_area:.4f} → {reason}")
             return contour
         else:
-            if i < 15:
+            if i < 10:
                 print(f"[corner] {label}: REJECTED contour[{i}] area_ratio={area/image_area:.4f} → {reason}")
 
-    print(f"[corner] {label}: no valid sheet contour among {len(contours_sorted)} candidates")
+    print(f"[corner] {label}: no valid sheet contour found")
     return None
 
 
-# ---------------------------------------------------------------------------
-# Finalisation
-# ---------------------------------------------------------------------------
-
 def _finalize_detection(sheet_contour: np.ndarray, label: str) -> DetectionResult:
-    """
-    Convert a validated raw contour to an ordered 4-corner DetectionResult.
-
-    Uses epsilon=0.05 * perimeter (same as validation) so the vertex count
-    is guaranteed to be 4 (validation already confirmed this).
-    """
+    """Convert a validated raw contour to an ordered 4-corner DetectionResult."""
     peri = cv2.arcLength(sheet_contour, closed=True)
-    # Try epsilon values in order until we get exactly 4 pts
     pts = None
     for eps in [0.05, 0.04, 0.03, 0.06, 0.07]:
         approx = cv2.approxPolyDP(sheet_contour, epsilon=eps * peri, closed=True)
@@ -252,7 +404,7 @@ def _finalize_detection(sheet_contour: np.ndarray, label: str) -> DetectionResul
             break
 
     if pts is None or len(pts) != 4:
-        print(f"[corner] WARN: finalize could not get 4 pts after approx, using convexHull")
+        print(f"[corner] WARN: finalize could not get 4 pts, using convexHull")
         hull = cv2.convexHull(sheet_contour)
         peri2 = cv2.arcLength(hull, closed=True)
         for eps in [0.05, 0.04, 0.06, 0.03]:
@@ -261,7 +413,6 @@ def _finalize_detection(sheet_contour: np.ndarray, label: str) -> DetectionResul
                 pts = hull_approx.reshape(-1, 2).astype(np.float32)
                 break
         if pts is None or len(pts) != 4:
-            # Last resort: bounding rect corners
             x, y, w, h = cv2.boundingRect(sheet_contour)
             pts = np.array([[x, y], [x + w, y], [x + w, y + h], [x, y + h]], dtype=np.float32)
             print(f"[corner] WARN: using bounding rect corners")
@@ -281,15 +432,10 @@ def _finalize_detection(sheet_contour: np.ndarray, label: str) -> DetectionResul
 # ---------------------------------------------------------------------------
 
 def _save_failure_debug(det_image: np.ndarray, all_contours_by_pipeline: dict) -> None:
-    """
-    When ALL pipelines fail, save an annotated image showing the top-3
-    largest contours found across all pipelines, with their areas labelled.
-    """
     vis = det_image.copy()
     h, w = vis.shape[:2]
     image_area = float(w * h)
 
-    # Gather all contours from all pipelines, sort by area
     all_contours = []
     for label, conts in all_contours_by_pipeline.items():
         for c in conts[:5]:
@@ -304,12 +450,9 @@ def _save_failure_debug(det_image: np.ndarray, all_contours_by_pipeline: dict) -
         if M["m00"] > 0:
             cx = int(M["m10"] / M["m00"])
             cy = int(M["m01"] / M["m00"])
-            cv2.putText(
-                vis,
-                f"{label} ar={area/image_area:.3f}",
-                (max(cx - 60, 0), max(cy, 15)),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1,
-            )
+            cv2.putText(vis, f"{label} ar={area/image_area:.3f}",
+                        (max(cx - 60, 0), max(cy, 15)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
 
     cv2.putText(vis, "ALL PIPELINES FAILED", (10, 30),
                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
@@ -317,8 +460,24 @@ def _save_failure_debug(det_image: np.ndarray, all_contours_by_pipeline: dict) -
 
 
 # ---------------------------------------------------------------------------
-# Main detection entry point
+# Final result debug image
 # ---------------------------------------------------------------------------
+
+def _save_final_debug(image: np.ndarray, corners: list[CornerPoint], pipeline: str) -> None:
+    vis = image.copy()
+    pts = np.array([(c.x, c.y) for c in corners], dtype=np.int32)
+    cv2.polylines(vis, [pts], isClosed=True, color=(0, 255, 0), thickness=3)
+    labels = ["TL", "TR", "BR", "BL"]
+    for i, (pt, lbl) in enumerate(zip(pts, labels)):
+        cv2.circle(vis, tuple(pt), 10, (0, 0, 255), -1)
+        cv2.putText(vis, f"{lbl}({pt[0]},{pt[1]})", (pt[0] + 8, pt[1] - 8),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
+    _debug_save(f"99_final_pipeline{pipeline}.jpg", vis)
+
+
+# ===========================================================================
+# Main detection entry point
+# ===========================================================================
 
 def detect_corners(
     image_bytes: bytes,
@@ -327,13 +486,17 @@ def detect_corners(
     canny_high: int = 80,
 ) -> DetectionResult:
     """
-    Attempt to detect the four corners of an answer sheet in image_bytes.
+    Detect the four corners of the answer sheet.
 
-    Debug images are ALWAYS saved to backend-ai/debug/ so failures can be
-    diagnosed without any env-var or server restart.
+    Strategy order:
+      1. Fiducial marker detection (4 black squares at corners) — FASTEST, most robust
+      2. CLAHE + adaptive threshold page contour (Fallback A)
+      3. Canny edges page contour (Fallback B)
+      4. Otsu threshold page contour (Fallback C)
+      5. Aggressive blur + bilateral + Canny (Fallback D)
     """
     t0 = time.perf_counter()
-    det_w, det_h = 0, 0   # set as soon as we have a decoded image
+    det_w, det_h = 0, 0
 
     try:
         # ── 1. Decode ────────────────────────────────────────────────────────
@@ -341,7 +504,7 @@ def detect_corners(
         image = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
         if image is None:
-            print("[corner] FAIL: cv2.imdecode returned None – image bytes may be corrupt")
+            print("[corner] FAIL: cv2.imdecode returned None")
             return DetectionResult(
                 detected=False, corners=[], message="Image non décodable",
                 detection_image_width=0, detection_image_height=0,
@@ -349,11 +512,11 @@ def detect_corners(
 
         orig_h, orig_w = image.shape[:2]
         print(f"[corner] ── detect_corners START ──────────────────────────────")
-        print(f"[corner] received bytes={len(image_bytes)} decoded {orig_w}x{orig_h} channels={image.shape[2]}")
+        print(f"[corner] received bytes={len(image_bytes)} decoded {orig_w}x{orig_h}")
 
         _debug_save("01_original.jpg", image)
 
-        # ── 2. Resize for detection (keep coords in detection space) ─────────
+        # ── 2. Resize for detection ──────────────────────────────────────────
         det_image = _resize_for_detection(image, target_long_side=1024)
         det_h, det_w = det_image.shape[:2]
         image_area = float(det_w * det_h)
@@ -370,14 +533,27 @@ def detect_corners(
 
         ksize = gaussian_ksize if gaussian_ksize % 2 == 1 else gaussian_ksize + 1
 
-        # Collect top contours from each pipeline for the failure debug image
-        pipeline_contours: dict = {}
+        # ── PIPELINE PRIMARY: Fiducial marker detection ──────────────────────
+        t_fid = time.perf_counter()
+        fid_result = _detect_fiducial_markers(det_image, gray, image_area)
+        print(f"[corner] Pipeline FIDUCIAL done in {1000*(time.perf_counter()-t_fid):.0f}ms")
 
-        # ── 4. Pipeline A: CLAHE → Adaptive threshold ─────────────────────────
-        print(f"[corner] ── Pipeline A: CLAHE + Adaptive Threshold ────────────")
+        if fid_result is not None:
+            _save_final_debug(det_image, fid_result, "FID")
+            result = DetectionResult(
+                detected=True,
+                corners=fid_result,
+                message="Feuille détectée (marqueurs fiduciels)",
+                detection_image_width=det_w,
+                detection_image_height=det_h,
+            )
+            print(f"[corner] ── detect_corners END ({1000*(time.perf_counter()-t0):.0f} ms) ──")
+            return result
+
+        # ── FALLBACK A: CLAHE + Adaptive threshold ───────────────────────────
+        print(f"[corner] ── Fallback A: CLAHE + Adaptive Threshold ────────────")
         t_a = time.perf_counter()
 
-        # CLAHE equalisation before blurring helps with uneven mobile lighting
         clahe_a = cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
         gray_a = clahe_a.apply(gray)
         _debug_save("04a_clahe.jpg", gray_a)
@@ -397,53 +573,43 @@ def detect_corners(
         closed_a = cv2.morphologyEx(thresh_a, cv2.MORPH_CLOSE, kernel_a, iterations=2)
         _debug_save("06a_morph_close.jpg", closed_a)
 
+        pipeline_contours: dict = {}
         contour_vis_a = det_image.copy()
         conts_a, _ = cv2.findContours(closed_a, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(contour_vis_a, conts_a, -1, (0, 255, 0), 2)
         _debug_save("07a_contours_all.jpg", contour_vis_a)
-        pipeline_contours["adaptive"] = sorted(conts_a, key=cv2.contourArea, reverse=True)[:5]
+        pipeline_contours["clahe-adaptive"] = sorted(conts_a, key=cv2.contourArea, reverse=True)[:5]
 
-        sheet = _detect_from_edges(closed_a, image_area, "adaptive-thresh")
-        print(f"[corner] Pipeline A done in {1000*(time.perf_counter()-t_a):.0f}ms")
+        sheet = _detect_from_edges(closed_a, image_area, "clahe-adaptive")
+        print(f"[corner] Fallback A done in {1000*(time.perf_counter()-t_a):.0f}ms")
         if sheet is not None:
-            result = _finalize_detection(sheet, "adaptive-thresh")
+            result = _finalize_detection(sheet, "clahe-adaptive")
             _save_final_debug(det_image, result.corners, "A")
             result.detection_image_width = det_w
             result.detection_image_height = det_h
             print(f"[corner] ── detect_corners END ({1000*(time.perf_counter()-t0):.0f} ms) ──")
             return result
 
-        # ── 5. Pipeline B: Canny edges ───────────────────────────────────────
-        print(f"[corner] ── Pipeline B: Canny ───────────────────────────────")
+        # ── FALLBACK B: Canny edges ──────────────────────────────────────────
+        print(f"[corner] ── Fallback B: Canny ──────────────────────────────────")
         t_b = time.perf_counter()
 
-        bilateral = cv2.bilateralFilter(gray, d=9, sigmaColor=75, sigmaSpace=75)
-        _debug_save("04b_bilateral.jpg", bilateral)
-
-        edges_b = cv2.Canny(bilateral, canny_low, canny_high)
+        blurred_b = cv2.GaussianBlur(gray, (ksize, ksize), 0)
+        edges_b = cv2.Canny(blurred_b, canny_low, canny_high)
         _debug_save("05b_canny.jpg", edges_b)
-        edge_px = int(edges_b.sum() / 255)
-        print(f"[corner] canny: low={canny_low} high={canny_high} edge_pixels={edge_px} ratio={edge_px/image_area:.5f}")
-
-        if edge_px < 200:
-            print(f"[corner] canny: too few edge pixels ({edge_px}), retrying with 10/40")
-            edges_b = cv2.Canny(bilateral, 10, 40)
-            _debug_save("05b_canny_retry.jpg", edges_b)
-            edge_px = int(edges_b.sum() / 255)
-            print(f"[corner] canny retry: edge_pixels={edge_px}")
 
         kernel_b = cv2.getStructuringElement(cv2.MORPH_RECT, (5, 5))
-        edges_dilated_b = cv2.dilate(edges_b, kernel_b, iterations=2)
-        _debug_save("06b_canny_dilated.jpg", edges_dilated_b)
+        dilated_b = cv2.dilate(edges_b, kernel_b, iterations=2)
+        _debug_save("06b_canny_dilated.jpg", dilated_b)
 
         contour_vis_b = det_image.copy()
-        conts_b, _ = cv2.findContours(edges_dilated_b, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+        conts_b, _ = cv2.findContours(dilated_b, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
         cv2.drawContours(contour_vis_b, conts_b, -1, (0, 255, 0), 2)
         _debug_save("07b_contours_all.jpg", contour_vis_b)
         pipeline_contours["canny"] = sorted(conts_b, key=cv2.contourArea, reverse=True)[:5]
 
-        sheet = _detect_from_edges(edges_dilated_b, image_area, "canny")
-        print(f"[corner] Pipeline B done in {1000*(time.perf_counter()-t_b):.0f}ms")
+        sheet = _detect_from_edges(dilated_b, image_area, "canny")
+        print(f"[corner] Fallback B done in {1000*(time.perf_counter()-t_b):.0f}ms")
         if sheet is not None:
             result = _finalize_detection(sheet, "canny")
             _save_final_debug(det_image, result.corners, "B")
@@ -452,16 +618,16 @@ def detect_corners(
             print(f"[corner] ── detect_corners END ({1000*(time.perf_counter()-t0):.0f} ms) ──")
             return result
 
-        # ── 6. Pipeline C: Otsu threshold ────────────────────────────────────
-        print(f"[corner] ── Pipeline C: Otsu Threshold ─────────────────────")
+        # ── FALLBACK C: Otsu threshold ───────────────────────────────────────
+        print(f"[corner] ── Fallback C: Otsu Threshold ─────────────────────────")
         t_c = time.perf_counter()
 
         blurred_c = cv2.GaussianBlur(gray, (ksize, ksize), 0)
-        _, otsu_c = cv2.threshold(blurred_c, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
-        _debug_save("04c_otsu.jpg", otsu_c)
+        _, thresh_c = cv2.threshold(blurred_c, 0, 255, cv2.THRESH_BINARY_INV + cv2.THRESH_OTSU)
+        _debug_save("04c_otsu.jpg", thresh_c)
 
-        kernel_c = cv2.getStructuringElement(cv2.MORPH_RECT, (9, 9))
-        closed_c = cv2.morphologyEx(otsu_c, cv2.MORPH_CLOSE, kernel_c, iterations=2)
+        kernel_c = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
+        closed_c = cv2.morphologyEx(thresh_c, cv2.MORPH_CLOSE, kernel_c, iterations=2)
         _debug_save("05c_otsu_morph.jpg", closed_c)
 
         contour_vis_c = det_image.copy()
@@ -471,7 +637,7 @@ def detect_corners(
         pipeline_contours["otsu"] = sorted(conts_c, key=cv2.contourArea, reverse=True)[:5]
 
         sheet = _detect_from_edges(closed_c, image_area, "otsu")
-        print(f"[corner] Pipeline C done in {1000*(time.perf_counter()-t_c):.0f}ms")
+        print(f"[corner] Fallback C done in {1000*(time.perf_counter()-t_c):.0f}ms")
         if sheet is not None:
             result = _finalize_detection(sheet, "otsu")
             _save_final_debug(det_image, result.corners, "C")
@@ -480,16 +646,19 @@ def detect_corners(
             print(f"[corner] ── detect_corners END ({1000*(time.perf_counter()-t0):.0f} ms) ──")
             return result
 
-        # ── 7. Pipeline D: CLAHE + aggressive Canny for bad lighting ─────────
-        print(f"[corner] ── Pipeline D: Aggressive CLAHE + Canny ────────────")
+        # ── FALLBACK D: Bilateral + aggressive Canny ─────────────────────────
+        print(f"[corner] ── Fallback D: Bilateral + aggressive Canny ───────────")
         t_d = time.perf_counter()
 
-        clahe_d = cv2.createCLAHE(clipLimit=3.5, tileGridSize=(8, 8))
-        gray_eq = clahe_d.apply(gray)
-        _debug_save("04d_clahe.jpg", gray_eq)
+        blurred_d = cv2.GaussianBlur(gray, (7, 7), 0)
+        bilateral_d = cv2.bilateralFilter(blurred_d, 9, 75, 75)
+        _debug_save("04b_bilateral.jpg", bilateral_d)
 
-        blurred_d = cv2.GaussianBlur(gray_eq, (11, 11), 0)
-        edges_d = cv2.Canny(blurred_d, 10, 50)
+        clahe_d = cv2.createCLAHE(clipLimit=4.0, tileGridSize=(8, 8))
+        gray_d = clahe_d.apply(bilateral_d)
+        _debug_save("04d_clahe.jpg", gray_d)
+
+        edges_d = cv2.Canny(gray_d, 10, 50)
         _debug_save("05d_canny_clahe.jpg", edges_d)
 
         kernel_d = cv2.getStructuringElement(cv2.MORPH_RECT, (7, 7))
@@ -502,9 +671,8 @@ def detect_corners(
         _debug_save("07d_contours_all.jpg", contour_vis_d)
         pipeline_contours["clahe-canny"] = sorted(conts_d, key=cv2.contourArea, reverse=True)[:5]
 
-        # More lenient area threshold for this last pipeline
         sheet = _detect_from_edges(dilated_d, image_area, "clahe-canny", min_area_ratio=0.02)
-        print(f"[corner] Pipeline D done in {1000*(time.perf_counter()-t_d):.0f}ms")
+        print(f"[corner] Fallback D done in {1000*(time.perf_counter()-t_d):.0f}ms")
         if sheet is not None:
             result = _finalize_detection(sheet, "clahe-canny")
             _save_final_debug(det_image, result.corners, "D")
@@ -513,8 +681,8 @@ def detect_corners(
             print(f"[corner] ── detect_corners END ({1000*(time.perf_counter()-t0):.0f} ms) ──")
             return result
 
-        # ── 8. All pipelines exhausted ────────────────────────────────────────
-        print(f"[corner] ALL PIPELINES FAILED – no sheet contour found in any of A/B/C/D")
+        # ── All pipelines exhausted ───────────────────────────────────────────
+        print(f"[corner] ALL PIPELINES FAILED – no sheet found in FIDUCIAL/A/B/C/D")
         _save_failure_debug(det_image, pipeline_contours)
         print(f"[corner] ── detect_corners END ({1000*(time.perf_counter()-t0):.0f} ms) ──")
         return DetectionResult(
@@ -529,23 +697,6 @@ def detect_corners(
             detected=False, corners=[], message=f"Erreur: {tb[:200]}",
             detection_image_width=det_w, detection_image_height=det_h,
         )
-
-
-# ---------------------------------------------------------------------------
-# Final result debug image
-# ---------------------------------------------------------------------------
-
-def _save_final_debug(image: np.ndarray, corners: list[CornerPoint], pipeline: str) -> None:
-    """Draw detected corners on the image and save it."""
-    vis = image.copy()
-    pts = np.array([(c.x, c.y) for c in corners], dtype=np.int32)
-    cv2.polylines(vis, [pts], isClosed=True, color=(0, 255, 0), thickness=3)
-    labels = ["TL", "TR", "BR", "BL"]
-    for i, (pt, label) in enumerate(zip(pts, labels)):
-        cv2.circle(vis, tuple(pt), 10, (0, 0, 255), -1)
-        cv2.putText(vis, f"{label}({pt[0]},{pt[1]})", (pt[0] + 8, pt[1] - 8),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (0, 255, 255), 2)
-    _debug_save(f"99_final_pipeline{pipeline}.jpg", vis)
 
 
 # ---------------------------------------------------------------------------

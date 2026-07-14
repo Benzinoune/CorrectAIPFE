@@ -33,7 +33,8 @@ const DETECTION_INTERVAL_MS = 400;
 // that it saturates the upload pipeline.
 const SMALL_PICTURE_QUALITY = 0.6;
 const MIN_CAPTURE_INTERVAL_MS = 3000;
-const STABILITY_HISTORY_LENGTH = 3;
+// We require 4 consecutive stable frames (at ~2fps, this is about 1.5-2 seconds)
+const STABILITY_HISTORY_LENGTH = 4;
 
 /* ---------- Geometry helpers ---------- */
 
@@ -339,7 +340,7 @@ function validateCorners(corners: CornerPoint[], snapshotWidth: number, snapshot
 
 function averageCorners(a: CornerPoint[], b: CornerPoint[]): boolean {
   if (a.length !== 4 || b.length !== 4) return false;
-  const threshold = 30;
+  const threshold = 45; // Increased for handheld stability
   for (let i = 0; i < 4; i++) {
     const dx = Math.abs(a[i].x - b[i].x);
     const dy = Math.abs(a[i].y - b[i].y);
@@ -383,6 +384,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   const isDetectingRef = useRef(false);
   const lastCaptureTime = useRef(0);
   const stabilityHistory = useRef<{ corners: CornerPoint[]; time: number }[]>([]);
+  const detectionFailures = useRef(0);
   const detectionPictureSizeRef = useRef<string | undefined>(undefined);
   const capturePictureSizeRef = useRef<string | undefined>(undefined);
   const pictureSizesLoadedRef = useRef(false);
@@ -392,13 +394,14 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
   const questionCount = props.selectedExam?.questions ?? 20;
   const isKeyMode = props.scannerMode === 'key';
-  const canCapture = isAligned && isStable && !isCapturing && autoCaptureEnabled;
+  const canAutoCapture = isAligned && isStable && !isCapturing && autoCaptureEnabled;
+  const canManualCapture = isAligned && isStable && !isCapturing && !autoCaptureEnabled;
 
   isCapturingRef.current = isCapturing;
   scanResultVisibleRef.current = scanResultVisible;
 
-  console.log('[Scanner] Render: isAligned=%s isStable=%s isCapturing=%s canCapture=%s scanResultVisible=%s autoCaptureDone=%s',
-    isAligned, isStable, isCapturing, canCapture, scanResultVisible, autoCaptureDone.current);
+  console.log('[Scanner] Render: isAligned=%s isStable=%s isCapturing=%s canAutoCapture=%s canManualCapture=%s',
+    isAligned, isStable, isCapturing, canAutoCapture, canManualCapture);
 
   useEffect(() => {
     console.log('[Scanner] scanResultVisible changed to:', scanResultVisible);
@@ -669,9 +672,10 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
           /* -------- Stability tracking via history window -------- */
           const history = stabilityHistory.current;
+          detectionFailures.current = 0;
 
-          /* Purge entries older than 2.5 s */
-          while (history.length > 0 && now - history[0].time > 2500) {
+          /* Purge entries older than 5 s (to allow accumulating 6 frames at ~500ms/frame) */
+          while (history.length > 0 && now - history[0].time > 5000) {
             history.shift();
           }
 
@@ -680,9 +684,16 @@ export function ProfessorScannerScreen(props: ScannerProps) {
             history.shift();
           }
 
-          /* Check all corners in the window match */
-          const allMatch = history.length >= STABILITY_HISTORY_LENGTH
-            && history.every((entry) => averageCorners(entry.corners, newCorners));
+          /* Check consecutive frames match instead of every frame to the last */
+          let allMatch = history.length >= STABILITY_HISTORY_LENGTH;
+          if (allMatch) {
+            for (let i = 0; i < history.length - 1; i++) {
+              if (!averageCorners(history[i].corners, history[i + 1].corners)) {
+                allMatch = false;
+                break;
+              }
+            }
+          }
 
           console.log(
             '[Scanner] detect-corners: stability window length=%d allMatch=%s',
@@ -693,7 +704,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           if (allMatch) {
             const windowDuration = now - history[0].time;
             console.log('[Scanner] detect-corners: windowDuration=%dms', windowDuration);
-            if (windowDuration >= 1000) {
+            if (windowDuration >= 1200) {
               if (!isStable) {
                 console.log('[Scanner] Document validated & stable – setting isStable=true, confidence=%d', validation.score);
               }
@@ -717,22 +728,30 @@ export function ProfessorScannerScreen(props: ScannerProps) {
             setDetectedCorners([]);
             setDetectionConfidence(0);
           }
-          stabilityHistory.current = [];
-          setIsAligned(false);
-          setIsStable(false);
+          
+          detectionFailures.current += 1;
+          if (detectionFailures.current >= 3) {
+            stabilityHistory.current = [];
+            setIsAligned(false);
+            setIsStable(false);
+          }
           setDetectionMessage(validation.reason);
         }
       } else {
         /* -------- No corners from backend -------- */
         console.log('[Scanner] detect-corners: invalid payload or no corners detected');
         if (detectedCorners.length > 0) {
-          console.log('[Scanner] No corners detected – clearing state');
+          console.log('[Scanner] No corners detected – waiting for 3 consecutive failures before clearing state');
         }
         setDetectedCorners([]);
         setDetectionConfidence(0);
-        stabilityHistory.current = [];
-        setIsAligned(false);
-        setIsStable(false);
+        
+        detectionFailures.current += 1;
+        if (detectionFailures.current >= 3) {
+          stabilityHistory.current = [];
+          setIsAligned(false);
+          setIsStable(false);
+        }
         setDetectionMessage(data.message ?? '');
       }
     } catch (error) {
@@ -790,9 +809,14 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   }, [cameraReady, permission?.granted]);
 
   const doCapture = useCallback(async () => {
-    console.log('[Scanner] doCapture called: canCapture=%s autoCaptureDone=%s scanResultVisible=%s',
-      canCapture, autoCaptureDone.current, scanResultVisible);
-    if (!canCapture || autoCaptureDone.current || scanResultVisible) return;
+    console.log('[Scanner] doCapture called: isAligned=%s isStable=%s autoCaptureDone=%s scanResultVisible=%s',
+      isAligned, isStable, autoCaptureDone.current, scanResultVisible);
+      
+    // Strict guard: NEVER allow capture (manual or auto) if not aligned and stable
+    if (!isAligned || !isStable || isCapturing || autoCaptureDone.current || scanResultVisible) {
+      console.log('[Scanner] doCapture blocked by strict guard conditions');
+      return;
+    }
 
     const now = Date.now();
     if (now - lastCaptureTime.current < MIN_CAPTURE_INTERVAL_MS) return;
@@ -809,17 +833,16 @@ export function ProfessorScannerScreen(props: ScannerProps) {
     console.log('[Scanner] doCapture: autoCaptureDone set, isCapturing set, calling takePictureAsync...');
 
     try {
-      const capturePictureSize = capturePictureSizeRef.current;
-      if (capturePictureSize && cameraPictureSize !== capturePictureSize) {
-        console.log(
-          '[Scanner] doCapture: switching pictureSize to capture size=%s',
-          capturePictureSize,
-        );
-        setCameraPictureSize(capturePictureSize);
-        await new Promise((resolve) => setTimeout(resolve, 250));
-      }
-
-      const image = await camera.takePictureAsync({ quality: imageQuality, skipProcessing: true });
+      // ── Take a PREVIEW-quality snapshot for the scan ──────────────────────
+      // CRITICAL: We must NOT use a high-res capture for the scan image.
+      // Android cameras use a different Field of View (FOV) for high-res photos
+      // vs. the live preview. The corners were detected on the preview FOV.
+      // Sending a high-res photo with different FOV means the corners will point
+      // to the wrong location → bad crop. 
+      // Solution: take a fresh preview-quality snapshot (same FOV as detection)
+      // and send THAT to /scan along with the pre-detected corners.
+      console.log('[Scanner] doCapture: taking preview-quality snapshot for scan (same FOV as detection)');
+      const image = await camera.takePictureAsync({ quality: SMALL_PICTURE_QUALITY });
       console.log('[Scanner] takePictureAsync returned:', image ? `uri=${image.uri?.substring(0, 50)}...` : 'null');
 
       let studentName: string | null = null;
@@ -835,9 +858,11 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
       if (image?.uri && detectedCorners.length === 4) {
         // ── Unified /scan endpoint ────────────────────────────────────────────
-        // Pass the pre-detected corners so the backend does NOT re-run corner
-        // detection on the high-res image. This eliminates the double-detection
-        // mismatch between the low-res preview snapshot and the full-res capture.
+        // We pass the pre-detected corners (from the live preview detection loop)
+        // together with the backend frame dimensions so the backend can scale
+        // them correctly to the snapshot resolution for the perspective warp.
+        // Since the snapshot was taken at the SAME quality/FOV as the detection
+        // frames, the corners are in the correct coordinate space.
         const cornersJson = JSON.stringify(
           detectedCorners.map((c) => ({ x: Math.round(c.x), y: Math.round(c.y) })),
         );
@@ -1021,7 +1046,9 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       setIsCapturing(false);
     }
   }, [
-    canCapture,
+    isAligned,
+    isStable,
+    isCapturing,
     permission,
     requestPermission,
     detectedCorners,
@@ -1034,13 +1061,13 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   ]);
 
   useEffect(() => {
-    console.log('[Scanner] Auto-capture effect: canCapture=%s autoCaptureDone=%s scanResultVisible=%s',
-      canCapture, autoCaptureDone.current, scanResultVisible);
-    if (canCapture && !autoCaptureDone.current && !scanResultVisible) {
+    console.log('[Scanner] Auto-capture effect: canAutoCapture=%s autoCaptureDone=%s scanResultVisible=%s',
+      canAutoCapture, autoCaptureDone.current, scanResultVisible);
+    if (canAutoCapture && !autoCaptureDone.current && !scanResultVisible) {
       console.log('[Scanner] Auto-capture condition met - calling doCapture()');
       doCapture();
     }
-  }, [canCapture, doCapture, scanResultVisible]);
+  }, [canAutoCapture, doCapture, scanResultVisible]);
 
   const onCameraLayout = useCallback((event: any) => {
     const { width, height } = event.nativeEvent.layout;
@@ -1067,6 +1094,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
     autoCaptureDone.current = false;
     lastCaptureTime.current = 0;
     stabilityHistory.current = [];
+    detectionFailures.current = 0;
     const detectionPictureSize = detectionPictureSizeRef.current;
     if (detectionPictureSize) {
       console.log('[Scanner] closeBottomSheet: restoring detection pictureSize=%s', detectionPictureSize);
@@ -1151,9 +1179,12 @@ export function ProfessorScannerScreen(props: ScannerProps) {
             )}
 
             <View style={styles.guidanceWrap}>
-              <Text style={styles.guidanceText}>
-                Alignez la feuille de réponses dans le cadre
-              </Text>
+              {!isAligned || !isStable ? (
+                <Text style={styles.guidanceText}>
+                  Alignez la feuille dans le cadre
+                </Text>
+              ) : null}
+
               {isAligned && isStable ? (
                 <View style={styles.alignBadge}>
                   <Ionicons name="checkmark-circle" size={14} color="#4ADE80" />
@@ -1163,6 +1194,22 @@ export function ProfessorScannerScreen(props: ScannerProps) {
                 <Text style={styles.subText}>{detectionMessage}</Text>
               ) : null}
             </View>
+
+            {/* Manual capture button (only when auto-capture is disabled) */}
+            {!autoCaptureEnabled && (
+              <View style={styles.manualCaptureWrap}>
+                <Pressable
+                  style={[
+                    styles.manualCaptureBtn,
+                    (!isAligned || !isStable) && styles.manualCaptureBtnDisabled,
+                  ]}
+                  onPress={doCapture}
+                  disabled={!isAligned || !isStable || isCapturing}
+                >
+                  <View style={styles.manualCaptureInner} />
+                </Pressable>
+              </View>
+            )}
 
           </View>
         ) : (
@@ -1432,9 +1479,9 @@ const styles = StyleSheet.create({
   a4Frame: {
     position: 'absolute',
     top: 32,
-    left: 20,
-    right: 20,
-    bottom: 148,
+    left: 16,
+    right: 16,
+    bottom: 166,
     aspectRatio: 210 / 297,
     alignSelf: 'center',
     justifyContent: 'center',
@@ -1471,26 +1518,26 @@ const styles = StyleSheet.create({
     shadowRadius: 14,
   },
   cornerTopLeft: {
-    top: -3,
-    left: -3,
+    top: 0,
+    left: -22,
     borderRightWidth: 0,
     borderBottomWidth: 0,
   },
   cornerTopRight: {
-    top: -3,
-    right: -3,
+    top: 0,
+    right: -22,
     borderLeftWidth: 0,
     borderBottomWidth: 0,
   },
   cornerBottomLeft: {
-    bottom: -3,
-    left: -3,
+    bottom: 0,
+    left: -22,
     borderRightWidth: 0,
     borderTopWidth: 0,
   },
   cornerBottomRight: {
-    bottom: -3,
-    right: -3,
+    bottom: 0,
+    right: -22,
     borderLeftWidth: 0,
     borderTopWidth: 0,
   },
@@ -1511,6 +1558,33 @@ const styles = StyleSheet.create({
     textShadowColor: 'rgba(0,0,0,0.45)',
     textShadowRadius: 6,
     textShadowOffset: { width: 0, height: 1 },
+  },
+  manualCaptureWrap: {
+    position: 'absolute',
+    bottom: 30,
+    alignSelf: 'center',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualCaptureBtn: {
+    width: 68,
+    height: 68,
+    borderRadius: 34,
+    backgroundColor: 'rgba(255, 255, 255, 0.2)',
+    borderWidth: 4,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  manualCaptureBtnDisabled: {
+    borderColor: 'rgba(255, 255, 255, 0.4)',
+    backgroundColor: 'rgba(255, 255, 255, 0.1)',
+  },
+  manualCaptureInner: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: '#FFFFFF',
   },
   subText: {
     color: 'rgba(255,255,255,0.7)',
