@@ -110,7 +110,7 @@ function AnswerSheetColumn({
 
   return (
     <View style={styles.answerSheetColumn}>
-      <View style={[styles.answerSheetColumnHeader, { gap: 2, paddingBottom: 1 }]}>
+      <View style={[styles.answerSheetColumnHeader, { paddingBottom: 1 }]}>
         <Text
           style={[
             styles.answerSheetQuestionHeader,
@@ -157,19 +157,20 @@ function AnswerSheetColumn({
               ]}>
               {questionNumber}
             </Text>
-            <View style={[styles.answerSheetBubbles, { gap: layout.rowGap }]}>
+            <View style={styles.answerSheetBubbles}>
               {answerSheetChoices.map((choice) => (
-                <View
-                  key={choice}
-                  style={[
-                    styles.answerSheetBubble,
-                    {
-                      width: layout.bubbleSize,
-                      height: layout.bubbleSize,
-                      borderWidth: layout.bubbleBorderWidth,
-                    },
-                  ]}
-                />
+                <View key={choice} style={styles.answerSheetBubbleWrapper}>
+                  <View
+                    style={[
+                      styles.answerSheetBubble,
+                      {
+                        width: layout.bubbleSize,
+                        height: layout.bubbleSize,
+                        borderWidth: layout.bubbleBorderWidth,
+                      },
+                    ]}
+                  />
+                </View>
               ))}
             </View>
           </View>
@@ -348,13 +349,7 @@ function buildAnswerSheetHtml({ exam, questionCount, classValue, dateValue }: { 
     ${columnsHtml}
   </div>
 
-  <div class="sig">
-    <span class="sig-label">N° DE FEUILLE / SIGNATURE</span>
-    <div class="sig-line"></div>
-  </div>
-
   <div class="footer">
-    <span class="footer-text">CorrectAI - Feuille de reponses</span>
     <span class="footer-text">1 / 1</span>
   </div>
 </div>
@@ -597,14 +592,7 @@ export function ProfessorAnswerSheetScreen({ examsData, classesData, onNavigate,
             ))}
           </View>
 
-          <View style={[styles.answerSheetSignatureRow, isHundredQuestions && { paddingTop: 0, gap: 1 }]}>
-            <Text style={styles.answerSheetSignatureLabel}>N° DE FEUILLE / SIGNATURE</Text>
-            <View style={styles.answerSheetSignatureLine} />
-          </View>
 
-          <View style={[styles.answerSheetPaperFooter, isHundredQuestions && { paddingTop: 0 }]}>
-            <Text style={styles.answerSheetFooterBrand}>CorrectAI - Feuille de réponses</Text>
-          </View>
         </View>
 
         <View style={styles.answerSheetBottomBar}>
@@ -902,8 +890,11 @@ const styles = StyleSheet.create({
     flex: 1,
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: 1,
+  },
+  answerSheetBubbleWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
   },
   answerSheetBubble: {
     width: 10,

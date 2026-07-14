@@ -295,11 +295,6 @@ function ScannedCopySheetPreview({
           />
         ))}
       </View>
-
-      <View style={styles.answerSheetSignatureRow}>
-        <Text style={styles.answerSheetSignatureLabel}>N° DE FEUILLE / SIGNATURE</Text>
-        <View style={styles.answerSheetSignatureLine} />
-      </View>
     </View>
   );
 }
