@@ -119,16 +119,9 @@ def correct_perspective(
     doc_width  = max(width_top, width_bottom)
     doc_height = max(height_left, height_right)
 
-    # ── FORCE A4 ASPECT RATIO ─────────────────────────────────────────────────
-    # To ensure percentage-based OCR coordinates map perfectly to the template,
-    # the output crop MUST be strictly A4-proportioned.
-    A4_ASPECT = 1.4142857
-    
     # If for some reason the image is detected as landscape, force portrait
     if doc_width > doc_height:
         doc_width, doc_height = doc_height, doc_width
-        
-    doc_height = doc_width * A4_ASPECT
 
     print(
         f"[perspective] document edge sizes: width_top={width_top:.0f}px "
@@ -137,7 +130,7 @@ def correct_perspective(
     )
     print(
         f"[perspective] final doc_width={doc_width:.0f}px doc_height={doc_height:.0f}px "
-        f"aspect={doc_width/max(doc_height,1):.3f} (Forced A4)"
+        f"aspect={doc_width/max(doc_height,1):.3f}"
     )
 
     # Guard against degenerate warp (document detected as a sliver)

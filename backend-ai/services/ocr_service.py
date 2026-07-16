@@ -49,9 +49,19 @@ class OCRConfig:
     tesseract_path: Optional[str] = None
 
     rois: list[RegionOfInterest] = field(default_factory=lambda: [
-        RegionOfInterest(x=0.06, y=0.104, w=0.42, h=0.030, label="name", psm=7),
-        RegionOfInterest(x=0.06, y=0.134, w=0.42, h=0.030, label="matricule", psm=7),
-        RegionOfInterest(x=0.52, y=0.104, w=0.42, h=0.030, label="class_name", psm=7),
+        # Coordinates are relative to document WIDTH (w) to ensure they are stable
+        # regardless of how tall the document is (e.g. 20 vs 100 questions).
+        #
+        # Based on actual document layout (calibrated on 700px width reference):
+        # - "Nom complet" label is around y=0.26*w
+        # - "Nom complet" written text is around y=0.32*w
+        # - "Matricule" label is around y=0.38*w
+        # - "Matricule" written text is around y=0.42*w
+        # We add horizontal (x=0.03) padding and careful vertical positioning
+        # to avoid capturing the bottom of the printed labels.
+        RegionOfInterest(x=0.03, y=0.315, w=0.45, h=0.06, label="name", psm=7),
+        RegionOfInterest(x=0.03, y=0.415, w=0.45, h=0.06, label="matricule", psm=7),
+        RegionOfInterest(x=0.50, y=0.315, w=0.45, h=0.06, label="class_name", psm=7),
     ])
 
 
@@ -84,7 +94,7 @@ def _preprocess_roi(roi_bgr: np.ndarray, config: OCRConfig) -> np.ndarray:
     gray = cv2.fastNlMeansDenoising(gray, h=config.denoise_h)
     thresh = cv2.adaptiveThreshold(
         gray, 255, cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
-        cv2.THRESH_BINARY_INV, config.threshold_block, config.threshold_c,
+        cv2.THRESH_BINARY, config.threshold_block, config.threshold_c,
     )
     if abs(config.scale_factor - 1.0) > 0.01:
         h, w = thresh.shape
@@ -95,8 +105,16 @@ def _preprocess_roi(roi_bgr: np.ndarray, config: OCRConfig) -> np.ndarray:
     return thresh
 
 
-def _ocr_region(roi_bgr: np.ndarray, config: OCRConfig, psm: int) -> tuple[str, float]:
+def _ocr_region(roi_bgr: np.ndarray, config: OCRConfig, psm: int, label: str = "") -> tuple[str, float]:
     processed = _preprocess_roi(roi_bgr, config)
+    
+    # Debug: Save the processed image for the matricule so we can see what Tesseract sees
+    if label == "matricule":
+        import os
+        debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(debug_dir, "ocr_matricule_processed.jpg"), processed)
+
     pil_image = Image.fromarray(processed)
     custom_config = f"--psm {psm} --oem 1"
     data = pytesseract.image_to_data(
@@ -153,20 +171,36 @@ def extract_student_info(
     conf_sum = 0.0
     conf_count = 0
 
+    # ── Debug: save full warped image with ROI boxes ─────────────────────────
+    import os
+    debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
+    os.makedirs(debug_dir, exist_ok=True)
+    debug_img = image.copy()
+
     for roi in config.rois:
         x1 = max(0, int(roi.x * w))
-        y1 = max(0, int(roi.y * h))
+        y1 = max(0, int(roi.y * w))  # y is fraction of WIDTH for stability
         x2 = min(w, int((roi.x + roi.w) * w))
-        y2 = min(h, int((roi.y + roi.h) * h))
+        y2 = min(h, int((roi.y + roi.h) * w))
+        cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 0, 255), 3)
+        cv2.putText(debug_img, roi.label, (x1, max(0, y1 - 8)),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+    cv2.imwrite(os.path.join(debug_dir, "ocr_rois_debug.jpg"), debug_img)
+
+    for roi in config.rois:
+        x1 = max(0, int(roi.x * w))
+        y1 = max(0, int(roi.y * w))  # y is fraction of WIDTH for stability
+        x2 = min(w, int((roi.x + roi.w) * w))
+        y2 = min(h, int((roi.y + roi.h) * w))
 
         if x2 <= x1 or y2 <= y1:
             field_map[roi.label] = None
             continue
 
-        crop = image[y1:y2, x1:x2]
+        roi_bgr = image[y1:y2, x1:x2]
 
         try:
-            text, conf = _ocr_region(crop, config, psm=roi.psm)
+            text, conf = _ocr_region(roi_bgr, config, psm=roi.psm, label=roi.label)
             text = _sanitize(text)
             field_map[roi.label] = text if text else None
             if text:
