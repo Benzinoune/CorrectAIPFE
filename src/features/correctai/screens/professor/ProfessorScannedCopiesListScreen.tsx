@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import {
+  ActivityIndicator,
+  Alert,
   FlatList,
   Image,
   Modal,
@@ -27,6 +29,7 @@ import {
   reviewStatusLabel,
   reviewStatusTone,
 } from './shared';
+import { generateCopiesReportPDF, shareCopiesReportPDF } from '@/features/correctai/utils/pdf-report';
 
 const { colors, spacing, radius } = correctAiTheme;
 
@@ -40,28 +43,43 @@ type ReviewCopiesProps = {
   selectedScannedCopy?: ScannedCopy | null;
 };
 
-type ReviewFilter = 'all' | 'pending' | 'corrected' | 'validated';
+
 type ReviewSort = 'date-desc' | 'date-asc' | 'score-desc' | 'name-asc';
 
 function calculateReviewMetrics(copies: ScannedCopy[]) {
   const total = copies.length;
-  if (total === 0) return { total: 0, pending: 0, corrected: 0, validated: 0, averageScore: 0 };
+  if (total === 0) return { total: 0, pending: 0, corrected: 0, validated: 0, averageScore: 0, maxScore: 0, minScore: 0, successRate: 0 };
   const pending = copies.filter((c) => c.reviewStatus === 'DETECTED' || c.reviewStatus === 'PENDING').length;
   const corrected = copies.filter((c) => c.reviewStatus === 'CORRECTED').length;
   const validated = copies.filter((c) => c.reviewStatus === 'VALIDATED').length;
-  let scoreSum = 0;
-  let scoredCount = 0;
+  const percentages: number[] = [];
   copies.forEach((c) => {
     if (c.calculatedScore && c.calculatedScore.includes('/')) {
       const [score, max] = c.calculatedScore.split('/').map(Number);
       if (!isNaN(score) && !isNaN(max) && max > 0) {
-        scoreSum += (score / max) * 100;
-        scoredCount += 1;
+        percentages.push((score / max) * 100);
       }
     }
   });
-  const averageScore = scoredCount > 0 ? Math.round(scoreSum / scoredCount) : 0;
-  return { total, pending, corrected, validated, averageScore };
+  const averageScore = percentages.length > 0 ? Math.round(percentages.reduce((a, b) => a + b, 0) / percentages.length) : 0;
+  const maxScore = percentages.length > 0 ? Math.round(Math.max(...percentages)) : 0;
+  const minScore = percentages.length > 0 ? Math.round(Math.min(...percentages)) : 0;
+  const successRate = percentages.length > 0 ? Math.round((percentages.filter((p) => p >= 50).length / percentages.length) * 100) : 0;
+  return { total, pending, corrected, validated, averageScore, maxScore, minScore, successRate };
+}
+
+function ConfidenceBadge({ confidence }: { confidence: number }) {
+  const isHigh = confidence >= 70;
+  const isMed = confidence >= 40 && confidence < 70;
+  const bg = isHigh ? colors.successSoft : isMed ? colors.warningSoft : colors.dangerSoft;
+  const fg = isHigh ? colors.success : isMed ? '#8E5600' : colors.danger;
+  return (
+    <View style={[styles.confidenceBadge, { backgroundColor: bg }]}>
+      <Text style={[styles.confidenceBadgeText, { color: fg }]}>
+        Confiance {confidence}%
+      </Text>
+    </View>
+  );
 }
 
 function ScannedCopyListCard({
@@ -75,58 +93,67 @@ function ScannedCopyListCard({
 }) {
   const correctionSummary = useMemo(() => buildCopyCorrectionSummary(exam, copy), [copy, exam]);
   const isPending = copy.reviewStatus === 'DETECTED' || copy.reviewStatus === 'PENDING';
+  const isValidated = copy.reviewStatus === 'VALIDATED';
+  const stripeColor = isPending ? colors.warning : isValidated ? colors.success : colors.primary;
+
+  const scorePoints = correctionSummary ? formatScoreValue(correctionSummary.totalPoints) : '--';
+  const maxPoints = correctionSummary ? formatScoreValue(correctionSummary.maxPoints) : '--';
+  const pct = correctionSummary && correctionSummary.maxPoints > 0
+    ? Math.round((correctionSummary.totalPoints / correctionSummary.maxPoints) * 100)
+    : 0;
+  const scoreColor = pct >= 50 ? colors.success : pct > 0 ? colors.warning : colors.danger;
+
   return (
     <Pressable
       accessibilityRole="button"
       onPress={onPress}
       style={({ pressed }) => [
-        styles.reviewCopyRow,
-        isPending && styles.reviewCopyRowActive,
+        styles.copyCard,
         pressed && styles.pressed,
       ]}>
-      <View
-        style={[
-          styles.reviewCopyStripe,
-          { backgroundColor: isPending ? colors.primary : colors.neutralSoft },
-        ]}
-      />
-      <View style={styles.reviewCopyPreviewWrap}>
-        <View style={styles.reviewCopyThumbnail}>
-          {copy.imageUri ? (
-            <Image
-              source={{ uri: copy.imageUri }}
-              resizeMode="cover"
-              style={styles.reviewCopyThumbnailImage}
-            />
-          ) : (
-            <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
-              <Icon name={Icons.camera} color={colors.faint} size={24} />
-            </View>
-          )}
-        </View>
+      {/* Left accent stripe */}
+      <View style={[styles.copyStripe, { backgroundColor: stripeColor }]} />
+
+      {/* Thumbnail */}
+      <View style={styles.copyThumbWrap}>
+        {copy.imageUri ? (
+          <Image
+            source={{ uri: copy.imageUri }}
+            resizeMode="cover"
+            style={styles.copyThumbImage}
+          />
+        ) : (
+          <View style={styles.copyThumbPlaceholder}>
+            <Icon name={Icons.camera} color={colors.faint} size={20} />
+          </View>
+        )}
       </View>
-      <View style={styles.reviewCopyRowMain}>
-        <Text numberOfLines={1} style={styles.reviewCopyName}>
+
+      {/* Main content */}
+      <View style={styles.copyMain}>
+        <Text numberOfLines={1} style={styles.copyName}>
           {copy.studentName || 'Non identifié'}
         </Text>
-        <Text numberOfLines={1} style={styles.reviewCopyMeta}>
-          Matricule {copy.matricule || '0'} · {copy.examName}
+        <Text numberOfLines={1} style={styles.copyId}>
+          ID : {copy.matricule || 'À extraire plus tard'}
         </Text>
-        <View style={styles.reviewCopyBadgeRow}>
-          <StatusPill label={reviewStatusLabel(copy.reviewStatus)} tone={reviewStatusTone(copy.reviewStatus)} />
-          {copy.aiConfidence < 70 ? <StatusPill label="Confiance faible" tone="warning" /> : null}
+
+        <View style={styles.copyBadgeRow}>
+          <ConfidenceBadge confidence={copy.aiConfidence ?? 0} />
         </View>
-        <Text numberOfLines={1} style={styles.reviewCopySubmeta}>
-          {formatScannedCopyDateTime(copy.scannedAt)}
+
+        <Text numberOfLines={1} style={styles.copyMeta}>
+          {copy.className ? `${copy.className} · ` : ''}{formatScannedCopyDateTime(copy.scannedAt)}
         </Text>
       </View>
-      <View style={styles.reviewCopySide}>
-        <Text style={styles.reviewCopyCount}>
-          {correctionSummary ? formatScoreValue(correctionSummary.totalPoints) : '--'}
+
+      {/* Score side */}
+      <View style={styles.copySide}>
+        <Text style={styles.copyScoreRatio}>
+          {scorePoints} / {maxPoints}
         </Text>
-        <Text style={styles.reviewCopyCountLabel}>
-          / {correctionSummary ? formatScoreValue(correctionSummary.maxPoints) : '--'}
-        </Text>
+        <Text style={[styles.copyScore, { color: scoreColor }]}>{scorePoints}</Text>
+        <Text style={[styles.copyScorePct, { color: scoreColor }]}>{pct}%</Text>
       </View>
     </Pressable>
   );
@@ -138,16 +165,18 @@ export function ProfessorScannedCopiesListScreen({
   selectedExam,
 }: ReviewCopiesProps) {
   const exam = selectedExam ?? exams[0] ?? null;
-  const [filter, setFilter] = useState<ReviewFilter>('all');
+  const [filter, setFilter] = useState<string>('all');
   const [sort, setSort] = useState<ReviewSort>('date-desc');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
+  const [sortModalVisible, setSortModalVisible] = useState(false);
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const copies = useMemo(() => {
     if (!exam?.scannedCopies) return [];
     let result = [...exam.scannedCopies];
-    if (filter === 'pending') result = result.filter((c) => c.reviewStatus === 'DETECTED' || c.reviewStatus === 'PENDING');
-    if (filter === 'corrected') result = result.filter((c) => c.reviewStatus === 'CORRECTED');
-    if (filter === 'validated') result = result.filter((c) => c.reviewStatus === 'VALIDATED');
+    if (filter !== 'all') {
+      result = result.filter((c) => c.className === filter);
+    }
     result.sort((a, b) => {
       if (sort === 'date-desc') return new Date(b.scannedAt).getTime() - new Date(a.scannedAt).getTime();
       if (sort === 'date-asc') return new Date(a.scannedAt).getTime() - new Date(b.scannedAt).getTime();
@@ -163,7 +192,6 @@ export function ProfessorScannedCopiesListScreen({
   }, [exam?.scannedCopies, filter, sort]);
 
   const metrics = useMemo(() => calculateReviewMetrics(exam?.scannedCopies ?? []), [exam?.scannedCopies]);
-  const pendingCount = metrics.pending;
 
   useEffect(() => {
     console.log(
@@ -202,12 +230,46 @@ export function ProfessorScannedCopiesListScreen({
     onNavigate('professor-copy-detail');
   };
 
+  const filterOptions = useMemo(() => {
+    const options = [{ id: 'all', label: 'Toutes les classes', icon: Icons.school }];
+    if (!exam?.scannedCopies) return options;
+    const classes = new Set<string>();
+    exam.scannedCopies.forEach((c) => {
+      if (c.className) classes.add(c.className);
+    });
+    Array.from(classes).sort().forEach((className) => {
+      options.push({ id: className, label: className, icon: Icons.school });
+    });
+    return options;
+  }, [exam?.scannedCopies]);
+
   const getFilterLabel = () => {
-    switch (filter) {
-      case 'all': return 'Toutes les copies';
-      case 'pending': return 'À vérifier';
-      case 'corrected': return 'Corrigées';
-      case 'validated': return 'Validées';
+    if (filter === 'all') return 'Toutes les classes';
+    return filter;
+  };
+
+  const getSortLabel = () => {
+    switch (sort) {
+      case 'date-desc': return 'Date ↓';
+      case 'date-asc': return 'Date ↑';
+      case 'score-desc': return 'Score ↓';
+      case 'name-asc': return 'Nom A-Z';
+    }
+  };
+
+  const handleDownloadPDF = async () => {
+    if (copies.length === 0) {
+      Alert.alert('Aucune copie', 'Il n\'y a aucune copie à exporter pour le moment.');
+      return;
+    }
+    try {
+      setIsGeneratingPDF(true);
+      const uri = await generateCopiesReportPDF(exam, copies);
+      await shareCopiesReportPDF(uri);
+    } catch (error) {
+      Alert.alert('Erreur', error instanceof Error ? error.message : 'Échec de la génération du PDF.');
+    } finally {
+      setIsGeneratingPDF(false);
     }
   };
 
@@ -215,123 +277,225 @@ export function ProfessorScannedCopiesListScreen({
     <ScreenFrame
       compactHeader
       onBack={() => onNavigate('professor-exam-menu')}
+      rightAction={{ icon: Icons.download, onPress: handleDownloadPDF }}
       scrollable={false}
-      title="Historique des scans">
-      <View style={styles.reviewPage}>
-        <View style={styles.reviewHeroBlock}>
-          <View style={styles.reviewHeroHeaderRow}>
-            <View style={styles.reviewHeroIconWrap}>
-              <Icon name={Icons.doc} color={colors.card} size={24} />
+      title="Réviser les copies">
+      {isGeneratingPDF && (
+        <View style={styles.loadingOverlay}>
+          <View style={styles.loadingCard}>
+            <ActivityIndicator size="large" color={colors.primary} />
+            <Text style={styles.loadingText}>Génération du rapport PDF...</Text>
+          </View>
+        </View>
+      )}
+      <View style={styles.page}>
+
+        {/* ── Hero card ─────────────────────────────── */}
+        <View style={styles.hero}>
+          {/* Exam info row */}
+          <View style={styles.heroTopRow}>
+            <View style={styles.heroIconWrap}>
+              <Icon name={Icons.doc} color={colors.card} size={22} />
             </View>
-            <View style={styles.reviewHeroTextBlock}>
-              <Text numberOfLines={1} style={styles.reviewHeroTitle}>
-                {exam.name}
-              </Text>
-              <Text numberOfLines={1} style={styles.reviewHeroSubtitle}>
-                {metrics.total} copies scannées
+            <View style={styles.heroTextBlock}>
+              <Text numberOfLines={1} style={styles.heroExamName}>{exam.name}</Text>
+              <Text numberOfLines={1} style={styles.heroExamSub}>
+                {exam.name} · {exam.date}
               </Text>
             </View>
           </View>
-          <View style={styles.reviewHeroStatsRow}>
-            <View style={styles.reviewHeroStat}>
-              <Text style={styles.reviewHeroStatValue}>{pendingCount}</Text>
-              <Text style={styles.reviewHeroStatLabel}>À vérifier</Text>
+
+          {/* Stat boxes row */}
+          <View style={styles.heroStatRow}>
+            <View style={styles.heroStatBox}>
+              <Text style={styles.heroStatValue}>{metrics.total}</Text>
+              <Text style={styles.heroStatLabel}>Copies</Text>
             </View>
-            <View style={styles.reviewHeroStat}>
-              <Text style={styles.reviewHeroStatValue}>{metrics.validated}</Text>
-              <Text style={styles.reviewHeroStatLabel}>Validées</Text>
+            <View style={[styles.heroStatBox, styles.heroStatBoxDivider]}>
+              <Text style={styles.heroStatValue}>{exam.questions ?? 20}</Text>
+              <Text style={styles.heroStatLabel}>Questions</Text>
+            </View>
+            <View style={[styles.heroStatBox, styles.heroStatBoxDivider]}>
+              <Text style={styles.heroStatValue}>{metrics.pending}</Text>
+              <Text style={styles.heroStatLabel}>À vérifier</Text>
+            </View>
+            <View style={[styles.heroStatBox, styles.heroStatBoxDivider]}>
+              <Text style={styles.heroStatValue}>{metrics.validated}</Text>
+              <Text style={styles.heroStatLabel}>Validées</Text>
             </View>
           </View>
         </View>
 
-        <View style={styles.reviewMetricsStrip}>
-          <View style={styles.reviewMetricCell}>
-            <Text style={[styles.reviewMetricValue, pendingCount > 0 ? styles.reviewMetricWarning : styles.reviewMetricSuccess]}>
-              {pendingCount > 0 ? pendingCount : 'OK'}
-            </Text>
-            <Text style={styles.reviewMetricLabel}>Action requise</Text>
+        {/* ── Metrics strip ─────────────────────────── */}
+        <View style={styles.metricsStrip}>
+          <View style={styles.metricCell}>
+            <Text style={[styles.metricValue, { color: colors.danger }]}>{metrics.averageScore}</Text>
+            <Text style={styles.metricLabel}>Moyenne</Text>
           </View>
-          <View style={styles.reviewMetricCell}>
-            <Text style={styles.reviewMetricValue}>{metrics.averageScore}%</Text>
-            <Text style={styles.reviewMetricLabel}>Moyenne</Text>
+          <View style={[styles.metricCell, styles.metricCellDivider]}>
+            <Text style={[styles.metricValue, { color: colors.success }]}>{metrics.maxScore}</Text>
+            <Text style={styles.metricLabel}>Max</Text>
+          </View>
+          <View style={[styles.metricCell, styles.metricCellDivider]}>
+            <Text style={[styles.metricValue, { color: colors.danger }]}>{metrics.minScore}</Text>
+            <Text style={styles.metricLabel}>Min</Text>
+          </View>
+          <View style={[styles.metricCell, styles.metricCellDivider]}>
+            <Text style={[styles.metricValue, { color: '#E08B00' }]}>{metrics.successRate}%</Text>
+            <Text style={styles.metricLabel}>Réussite</Text>
           </View>
         </View>
 
-        <View style={styles.reviewControlsRow}>
+        {/* ── Controls ──────────────────────────────── */}
+        <View style={styles.controls}>
+          {/* Filter pill */}
           <Pressable
             accessibilityRole="button"
             onPress={() => setFilterModalVisible(true)}
-            style={({ pressed }) => [styles.reviewFilterPill, pressed && styles.pressed]}>
-            <Icon name={Icons.filter} color={colors.primary} size={18} />
-            <Text style={styles.reviewFilterLabel}>Filtre :</Text>
-            <Text numberOfLines={1} style={styles.reviewFilterValue}>
-              {getFilterLabel()}
-            </Text>
-            <Icon name={Icons.chevronDown} color={colors.muted} size={18} />
+            style={({ pressed }) => [styles.filterPill, pressed && styles.pressed]}>
+            <Text style={styles.filterPillLabel}>Classe</Text>
+            <Text numberOfLines={1} style={styles.filterPillValue}>{getFilterLabel()}</Text>
+            <Icon name={Icons.chevronDown} color={colors.muted} size={16} />
           </Pressable>
+
+          {/* Sort button */}
           <Pressable
             accessibilityRole="button"
-            onPress={() => setSort((s) => (s === 'date-desc' ? 'score-desc' : 'date-desc'))}
+            onPress={() => setSortModalVisible(true)}
             style={({ pressed }) => [
-              styles.reviewSortButton,
-              sort === 'score-desc' && styles.reviewSortButtonActive,
+              styles.sortButton,
+              sort !== 'date-desc' && styles.sortButtonActive,
               pressed && styles.pressed,
             ]}>
-            <Icon name={Icons.chart} color={sort === 'score-desc' ? colors.primary : colors.muted} size={18} />
+            <Icon name={Icons.chevronDown} color={sort !== 'date-desc' ? colors.primary : colors.muted} size={18} />
           </Pressable>
         </View>
 
+        {/* ── List ──────────────────────────────────── */}
         <FlatList
           data={copies}
           keyExtractor={(item) => item.id}
-          renderItem={({ item }) => <ScannedCopyListCard copy={item} exam={exam} onPress={() => handleCopyPress(item)} />}
-          contentContainerStyle={styles.reviewListContent}
+          renderItem={({ item }) => (
+            <ScannedCopyListCard
+              copy={item}
+              exam={exam}
+              onPress={() => handleCopyPress(item)}
+            />
+          )}
+          contentContainerStyle={styles.listContent}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={
-            <View style={styles.reviewEmptyHistoryCard}>
-              <Icon name={Icons.doc} color={colors.faint} size={48} />
-              <Text style={styles.reviewEmptyText}>Aucune copie scannée trouvée.</Text>
+            <View style={styles.emptyState}>
+              <View style={styles.emptyIconWrap}>
+                <Icon name={Icons.doc} color={colors.primary} size={36} />
+              </View>
+              <Text style={styles.emptyTitle}>Aucune copie trouvée</Text>
+              <Text style={styles.emptySubtitle}>
+                Aucune copie scannée ne correspond au filtre sélectionné.
+              </Text>
             </View>
           }
         />
       </View>
 
-      <Modal animationType="fade" transparent visible={filterModalVisible} onRequestClose={() => setFilterModalVisible(false)}>
-        <Pressable style={styles.reviewFilterModalBackdrop} onPress={() => setFilterModalVisible(false)}>
-          <Pressable style={styles.reviewFilterModalCard} onPress={(event) => event.stopPropagation()}>
-            <View style={styles.reviewFilterModalHeader}>
-              <Text style={styles.reviewFilterModalTitle}>Filtrer les copies</Text>
+      {/* ── Filter modal ──────────────────────────── */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={filterModalVisible}
+        onRequestClose={() => setFilterModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setFilterModalVisible(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Filtrer les copies</Text>
               <Pressable
                 accessibilityRole="button"
                 onPress={() => setFilterModalVisible(false)}
-                style={({ pressed }) => [styles.reviewFilterModalClose, pressed && styles.pressed]}>
+                style={({ pressed }) => [styles.modalCloseBtn, pressed && styles.pressed]}>
                 <Icon name={Icons.close} color={colors.ink} size={18} />
               </Pressable>
             </View>
-
-            <View style={styles.reviewFilterOptions}>
-              {[
-                { id: 'all', label: 'Toutes les copies' },
-                { id: 'pending', label: 'À vérifier' },
-                { id: 'corrected', label: 'Corrigées' },
-                { id: 'validated', label: 'Validées' },
-              ].map((option) => (
+            <View style={styles.modalOptions}>
+              {filterOptions.map((option) => (
                 <Pressable
                   key={option.id}
                   accessibilityRole="button"
                   onPress={() => {
-                    setFilter(option.id as ReviewFilter);
+                    setFilter(option.id);
                     setFilterModalVisible(false);
                   }}
                   style={({ pressed }) => [
-                    styles.reviewFilterOption,
-                    filter === option.id && styles.reviewFilterOptionActive,
+                    styles.modalOption,
+                    filter === option.id && styles.modalOptionActive,
                     pressed && styles.pressed,
                   ]}>
-                  <View style={[styles.reviewFilterOptionCheck, filter === option.id && styles.reviewFilterOptionCheckActive]}>
-                    {filter === option.id && <Icon name={Icons.check} color={colors.card} size={14} />}
+                  <View style={[styles.modalOptionIcon, filter === option.id && styles.modalOptionIconActive]}>
+                    <Icon name={option.icon} color={filter === option.id ? colors.card : colors.muted} size={16} />
                   </View>
-                  <Text style={styles.reviewFilterOptionLabel}>{option.label}</Text>
+                  <Text style={[styles.modalOptionLabel, filter === option.id && styles.modalOptionLabelActive]}>
+                    {option.label}
+                  </Text>
+                  {filter === option.id && (
+                    <View style={styles.modalOptionCheck}>
+                      <Icon name={Icons.check} color={colors.primary} size={16} />
+                    </View>
+                  )}
+                </Pressable>
+              ))}
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
+      {/* ── Sort modal ────────────────────────────── */}
+      <Modal
+        animationType="slide"
+        transparent
+        visible={sortModalVisible}
+        onRequestClose={() => setSortModalVisible(false)}>
+        <Pressable style={styles.modalBackdrop} onPress={() => setSortModalVisible(false)}>
+          <Pressable style={styles.modalSheet} onPress={(e) => e.stopPropagation()}>
+            <View style={styles.modalHandle} />
+            <View style={styles.modalHeader}>
+              <Text style={styles.modalTitle}>Trier les copies</Text>
+              <Pressable
+                accessibilityRole="button"
+                onPress={() => setSortModalVisible(false)}
+                style={({ pressed }) => [styles.modalCloseBtn, pressed && styles.pressed]}>
+                <Icon name={Icons.close} color={colors.ink} size={18} />
+              </Pressable>
+            </View>
+            <View style={styles.modalOptions}>
+              {([
+                { id: 'date-desc', label: 'Date (récent → ancien)', icon: Icons.calendar },
+                { id: 'date-asc', label: 'Date (ancien → récent)', icon: Icons.calendar },
+                { id: 'score-desc', label: 'Meilleur score', icon: Icons.trophy },
+                { id: 'name-asc', label: 'Nom A → Z', icon: Icons.people },
+              ] as const).map((option) => (
+                <Pressable
+                  key={option.id}
+                  accessibilityRole="button"
+                  onPress={() => {
+                    setSort(option.id);
+                    setSortModalVisible(false);
+                  }}
+                  style={({ pressed }) => [
+                    styles.modalOption,
+                    sort === option.id && styles.modalOptionActive,
+                    pressed && styles.pressed,
+                  ]}>
+                  <View style={[styles.modalOptionIcon, sort === option.id && styles.modalOptionIconActive]}>
+                    <Icon name={option.icon} color={sort === option.id ? colors.card : colors.muted} size={16} />
+                  </View>
+                  <Text style={[styles.modalOptionLabel, sort === option.id && styles.modalOptionLabelActive]}>
+                    {option.label}
+                  </Text>
+                  {sort === option.id && (
+                    <View style={styles.modalOptionCheck}>
+                      <Icon name={Icons.check} color={colors.primary} size={16} />
+                    </View>
+                  )}
                 </Pressable>
               ))}
             </View>
@@ -343,274 +507,227 @@ export function ProfessorScannedCopiesListScreen({
 }
 
 const styles = StyleSheet.create({
+  // ── Layout ──────────────────────────────────────
+  page: {
+    flex: 1,
+    minHeight: 0,
+    gap: spacing.sm,
+  },
+  loadingOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(255, 255, 255, 0.7)',
+    zIndex: 999,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  loadingCard: {
+    backgroundColor: colors.card,
+    padding: spacing.xl,
+    borderRadius: radius.lg,
+    alignItems: 'center',
+    gap: spacing.md,
+    shadowColor: '#1F2440',
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 8 },
+    elevation: 4,
+  },
+  loadingText: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: '700',
+  },
   listCard: { gap: spacing.sm, paddingVertical: spacing.sm },
   emptyText: { color: colors.muted, fontSize: 14, lineHeight: 20 },
   reviewEmptyButton: { alignSelf: 'flex-start' },
-  reviewPage: { flex: 1, minHeight: 0, gap: spacing.md },
-  reviewListContent: { gap: spacing.sm, paddingBottom: spacing.xxl },
-  reviewHeroBlock: {
-    borderRadius: 24,
+
+  // ── Hero ────────────────────────────────────────
+  hero: {
+    borderRadius: radius.xl,
     backgroundColor: colors.primary,
     padding: spacing.md,
     gap: spacing.md,
     shadowColor: colors.primary,
-    shadowOpacity: 0.24,
-    shadowRadius: 16,
-    shadowOffset: { width: 0, height: 8 },
-    elevation: 6,
+    shadowOpacity: 0.3,
+    shadowRadius: 20,
+    shadowOffset: { width: 0, height: 10 },
+    elevation: 8,
   },
-  reviewHeroHeaderRow: {
+  heroTopRow: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
   },
-  reviewHeroIconWrap: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
-    backgroundColor: 'rgba(255,255,255,0.16)',
+  heroIconWrap: {
+    width: 44,
+    height: 44,
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.18)',
     alignItems: 'center',
     justifyContent: 'center',
   },
-  reviewHeroTextBlock: {
+  heroTextBlock: {
     flex: 1,
     minWidth: 0,
     gap: 2,
   },
-  reviewHeroTitle: {
+  heroExamName: {
     color: colors.card,
-    fontSize: 21,
+    fontSize: 20,
+    fontWeight: '900',
+    lineHeight: 24,
+  },
+  heroExamSub: {
+    color: 'rgba(255,255,255,0.75)',
+    fontSize: 12,
+    fontWeight: '600',
+  },
+  heroStatRow: {
+    flexDirection: 'row',
+    borderRadius: radius.md,
+    backgroundColor: 'rgba(255,255,255,0.13)',
+    overflow: 'hidden',
+  },
+  heroStatBox: {
+    flex: 1,
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 2,
+  },
+  heroStatBoxDivider: {
+    borderLeftWidth: 1,
+    borderLeftColor: 'rgba(255,255,255,0.18)',
+  },
+  heroStatValue: {
+    color: colors.card,
+    fontSize: 22,
     fontWeight: '900',
     lineHeight: 26,
   },
-  reviewHeroSubtitle: {
-    color: 'rgba(255,255,255,0.82)',
-    fontSize: 13,
-    fontWeight: '600',
-    lineHeight: 18,
-  },
-  reviewHeroStatsRow: {
-    flexDirection: 'row',
-    gap: spacing.sm,
-  },
-  reviewHeroStat: {
-    flex: 1,
-    borderRadius: 18,
-    backgroundColor: 'rgba(255,255,255,0.14)',
-    paddingVertical: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: 2,
-  },
-  reviewHeroStatValue: {
-    color: colors.card,
-    fontSize: 26,
-    fontWeight: '900',
-    lineHeight: 30,
-  },
-  reviewHeroStatLabel: {
-    color: 'rgba(255,255,255,0.82)',
-    fontSize: 12,
+  heroStatLabel: {
+    color: 'rgba(255,255,255,0.78)',
+    fontSize: 11,
     fontWeight: '700',
   },
-  reviewMetricsStrip: {
+
+  // ── Metrics strip ────────────────────────────────
+  metricsStrip: {
     flexDirection: 'row',
-    borderRadius: 18,
-    overflow: 'hidden',
+    borderRadius: radius.lg,
     backgroundColor: colors.card,
     borderWidth: 1,
     borderColor: colors.border,
+    overflow: 'hidden',
     shadowColor: '#1F2440',
     shadowOpacity: 0.06,
     shadowRadius: 12,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2,
   },
-  reviewMetricCell: {
+  metricCell: {
     flex: 1,
-    minHeight: 72,
+    paddingVertical: spacing.sm,
     alignItems: 'center',
     justifyContent: 'center',
-    gap: 2,
-    borderRightWidth: 1,
-    borderRightColor: colors.border,
-    paddingVertical: spacing.sm,
+    gap: 1,
   },
-  reviewMetricValue: {
-    color: colors.primary,
-    fontSize: 24,
+  metricCellDivider: {
+    borderLeftWidth: 1,
+    borderLeftColor: colors.border,
+  },
+  metricValue: {
+    fontSize: 22,
     fontWeight: '900',
-    lineHeight: 28,
+    lineHeight: 26,
   },
-  reviewMetricSuccess: {
-    color: colors.success,
-  },
-  reviewMetricDanger: {
-    color: colors.danger,
-  },
-  reviewMetricWarning: {
-    color: '#E08B00',
-  },
-  reviewMetricLabel: {
+  metricLabel: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '700',
   },
-  reviewControlsRow: {
+
+  // ── Controls ────────────────────────────────────
+  controls: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
+    gap: spacing.xs,
   },
-  reviewFilterPill: {
+  filterPill: {
     flex: 1,
-    minHeight: 48,
-    borderRadius: 18,
+    minHeight: 46,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.card,
     flexDirection: 'row',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
+    gap: spacing.xs,
+    paddingHorizontal: spacing.sm,
+    shadowColor: '#1F2440',
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
-  reviewFilterLabel: {
+  filterPillLabel: {
     color: colors.muted,
+    fontSize: 13,
+    fontWeight: '700',
+  },
+  filterPillValue: {
+    flex: 1,
+    minWidth: 0,
+    color: colors.ink,
     fontSize: 13,
     fontWeight: '800',
   },
-  reviewFilterValue: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  reviewSortButton: {
-    width: 48,
-    height: 48,
-    borderRadius: 16,
+  sortButton: {
+    width: 46,
+    height: 46,
+    borderRadius: radius.md,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.card,
     alignItems: 'center',
     justifyContent: 'center',
-  },
-  reviewSortButtonActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primarySoft,
-  },
-  reviewEmptyText: {
-    color: colors.muted,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  reviewEmptyHistoryCard: {
-    width: '100%',
-    alignItems: 'center',
-    gap: spacing.xs,
-    paddingVertical: spacing.xl,
-  },
-  reviewFilterModalBackdrop: {
-    flex: 1,
-    backgroundColor: 'rgba(17, 24, 39, 0.42)',
-    alignItems: 'center',
-    justifyContent: 'center',
-    padding: spacing.lg,
-  },
-  reviewFilterModalCard: {
-    width: '100%',
-    maxWidth: 380,
-    borderRadius: 24,
-    backgroundColor: colors.card,
-    padding: spacing.lg,
-    gap: spacing.md,
     shadowColor: '#1F2440',
-    shadowOpacity: 0.18,
-    shadowRadius: 24,
-    shadowOffset: { width: 0, height: 12 },
-    elevation: 8,
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 1,
   },
-  reviewFilterModalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.sm,
-  },
-  reviewFilterModalTitle: {
-    color: colors.ink,
-    fontSize: 18,
-    fontWeight: '900',
-  },
-  reviewFilterModalClose: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    backgroundColor: colors.neutralSoft,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  reviewFilterOptions: {
-    gap: spacing.xs,
-  },
-  reviewFilterOption: {
-    minHeight: 48,
-    borderRadius: 16,
-    borderWidth: 1,
-    borderColor: colors.border,
-    backgroundColor: colors.card,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-  },
-  reviewFilterOptionActive: {
+  sortButtonActive: {
     borderColor: colors.primary,
     backgroundColor: colors.primarySoft,
   },
-  reviewFilterOptionCheck: {
-    width: 22,
-    height: 22,
-    borderRadius: 999,
-    borderWidth: 1,
-    borderColor: colors.border,
-    alignItems: 'center',
-    justifyContent: 'center',
-    backgroundColor: colors.card,
+
+  // ── List ────────────────────────────────────────
+  listContent: {
+    gap: spacing.sm,
+    paddingBottom: spacing.xxl,
   },
-  reviewFilterOptionCheckActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary,
-  },
-  reviewFilterOptionLabel: {
-    flex: 1,
-    minWidth: 0,
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: '800',
-  },
-  reviewCopyRow: {
-    minHeight: 84,
+
+  // ── Copy card ───────────────────────────────────
+  copyCard: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
-    borderRadius: 18,
+    borderRadius: radius.lg,
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.card,
-    padding: spacing.sm,
-    paddingLeft: spacing.sm + 2,
+    paddingVertical: spacing.sm,
+    paddingRight: spacing.sm,
+    paddingLeft: spacing.sm + 6,
     shadowColor: '#1F2440',
     shadowOpacity: 0.06,
     shadowRadius: 10,
-    shadowOffset: { width: 0, height: 6 },
+    shadowOffset: { width: 0, height: 4 },
     elevation: 2,
+    overflow: 'hidden',
   },
-  reviewCopyRowActive: {
-    borderColor: colors.primary,
-    backgroundColor: colors.card,
-  },
-  reviewCopyStripe: {
+  copyStripe: {
     position: 'absolute',
     left: 0,
     top: 10,
@@ -618,127 +735,206 @@ const styles = StyleSheet.create({
     width: 4,
     borderRadius: 999,
   },
-  reviewCopyPreviewWrap: {
-    width: 68,
-    height: 68,
+  copyThumbWrap: {
+    width: 60,
+    height: 72,
     flexShrink: 0,
-  },
-  reviewCopyThumbnail: {
-    width: '100%',
-    height: '100%',
-    borderRadius: 14,
+    borderRadius: radius.sm,
+    overflow: 'hidden',
     borderWidth: 1,
     borderColor: colors.border,
     backgroundColor: colors.screen,
-    overflow: 'hidden',
   },
-  reviewCopyThumbnailImage: {
+  copyThumbImage: {
     width: '100%',
     height: '100%',
   },
-  reviewCopyRowMain: {
+  copyThumbPlaceholder: {
+    width: '100%',
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyMain: {
     flex: 1,
     minWidth: 0,
-    gap: 2,
+    gap: 3,
   },
-  reviewCopyName: {
+  copyName: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '900',
-    lineHeight: 20,
+    lineHeight: 19,
   },
-  reviewCopyMeta: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: '700',
-    lineHeight: 16,
-  },
-  reviewCopyBadgeRow: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: spacing.xs,
-    paddingVertical: 2,
-  },
-  reviewCopyProgressLabel: {
-    color: colors.muted,
-    fontSize: 11,
-    fontWeight: '700',
-    lineHeight: 14,
-  },
-  reviewCopySubmeta: {
+  copyId: {
     color: colors.muted,
     fontSize: 12,
     fontWeight: '600',
-    lineHeight: 16,
+    lineHeight: 15,
   },
-  reviewCopySide: {
+  copyBadgeRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.xxs,
+    paddingVertical: 1,
+  },
+  confidenceBadge: {
+    paddingHorizontal: spacing.xs,
+    paddingVertical: 3,
+    borderRadius: 999,
+  },
+  confidenceBadgeText: {
+    fontSize: 11,
+    fontWeight: '800',
+  },
+  copyMeta: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '600',
+    lineHeight: 14,
+  },
+  copySide: {
     alignItems: 'flex-end',
     justifyContent: 'center',
-    gap: 2,
-    minWidth: 64,
+    gap: 0,
+    minWidth: 56,
   },
-  reviewCopyCount: {
-    color: colors.danger,
-    fontSize: 28,
+  copyScoreRatio: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: '700',
+  },
+  copyScore: {
+    fontSize: 26,
     fontWeight: '900',
     lineHeight: 28,
   },
-  reviewCopyCountLabel: {
-    color: colors.danger,
+  copyScorePct: {
     fontSize: 11,
-    fontWeight: '700',
+    fontWeight: '800',
+    lineHeight: 14,
   },
-  copyPreviewFrame: {
-    width: '100%',
-    aspectRatio: 0.8,
-    borderRadius: 14,
-    backgroundColor: '#FCFCFF',
-    borderWidth: 1,
-    borderColor: '#E5E8F4',
-    padding: 8,
-    shadowColor: '#1F2440',
-    shadowOpacity: 0.08,
-    shadowRadius: 10,
-    shadowOffset: { width: 0, height: 4 },
-    elevation: 2,
-  },
-  copyPreviewFrameCompact: {
-    aspectRatio: 0.9,
-    padding: 6,
-  },
-  copyPreviewHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
+
+  // ── Empty state ──────────────────────────────────
+  emptyState: {
     alignItems: 'center',
-    marginBottom: 6,
+    paddingVertical: spacing.xxl,
+    gap: spacing.sm,
   },
-  copyPreviewHeaderLine: {
+  emptyIconWrap: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: colors.primarySoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: spacing.xs,
+  },
+  emptyTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  emptySubtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 20,
+    paddingHorizontal: spacing.lg,
+  },
+
+  // ── Modal ────────────────────────────────────────
+  modalBackdrop: {
     flex: 1,
+    backgroundColor: 'rgba(17,24,39,0.45)',
+    justifyContent: 'flex-end',
+  },
+  modalSheet: {
+    backgroundColor: colors.card,
+    borderTopLeftRadius: 28,
+    borderTopRightRadius: 28,
+    paddingBottom: spacing.xxl,
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    gap: spacing.md,
+    shadowColor: '#1F2440',
+    shadowOpacity: 0.2,
+    shadowRadius: 24,
+    shadowOffset: { width: 0, height: -8 },
+    elevation: 12,
+  },
+  modalHandle: {
+    alignSelf: 'center',
+    width: 40,
     height: 4,
     borderRadius: 999,
-    backgroundColor: colors.primarySoft,
-    marginRight: 4,
+    backgroundColor: colors.border,
+    marginBottom: spacing.xs,
   },
-  copyPreviewHeaderBadge: {
-    width: 12,
-    height: 12,
-    borderRadius: 4,
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+  },
+  modalTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  modalCloseBtn: {
+    width: 36,
+    height: 36,
+    borderRadius: radius.sm,
+    backgroundColor: colors.neutralSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOptions: {
+    gap: spacing.xs,
+  },
+  modalOption: {
+    minHeight: 52,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.sm,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingHorizontal: spacing.sm,
+    backgroundColor: colors.card,
+  },
+  modalOptionActive: {
+    borderColor: colors.primary,
+    backgroundColor: colors.primarySoft,
+  },
+  modalOptionIcon: {
+    width: 34,
+    height: 34,
+    borderRadius: radius.xs,
+    backgroundColor: colors.neutralSoft,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  modalOptionIconActive: {
     backgroundColor: colors.primary,
   },
-  copyPreviewBody: {
-    gap: 6,
-  },
-  copyPreviewRow: {
-    flexDirection: 'row',
-    gap: 4,
-  },
-  copyPreviewBubble: {
+  modalOptionLabel: {
     flex: 1,
-    height: 7,
-    borderRadius: 999,
-    backgroundColor: '#E7E9F4',
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: '700',
   },
-  pressed: {
-    opacity: 0.72,
+  modalOptionLabelActive: {
+    color: colors.primary,
+    fontWeight: '900',
   },
+  modalOptionCheck: {
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  pressed: { opacity: 0.72 },
 });
