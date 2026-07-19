@@ -731,6 +731,28 @@ export function CorrectAiApp() {
       draft?.detectedAnswers ??
       draft?.omrResult?.answers?.map((answer) => answer.answer ?? '') ??
       buildMockDetectedAnswers(selectedExam.questions).map((answers) => answers.join('+'));
+      
+    let computedScore = draft?.calculatedScore ?? '--';
+    const bank = selectedExam.questionBank;
+    if ((computedScore === '--' || !computedScore) && bank && detectedAnswers.length > 0) {
+      let earned = 0;
+      let possible = 0;
+      bank.forEach((q, i) => {
+        possible += q.points;
+        const studentAns = detectedAnswers[i];
+        if (studentAns && q.correctAnswers.length > 0) {
+          const studentParts = studentAns.split('+').sort().join('+');
+          const correctParts = [...q.correctAnswers].sort().join('+');
+          if (studentParts === correctParts) {
+            earned += q.points;
+          }
+        }
+      });
+      if (possible > 0) {
+        computedScore = `${earned}/${possible}`;
+      }
+    }
+
     const confidenceLevels = [28, 94, 91, 61, 83, 74, 68, 88];
     const names = ['Non identifié', 'Khawla Lali', 'Aicha Zeraodi', 'Halima Fouti', 'Yanis Ziani', 'Nadia Belaid'];
     const matricules = ['0', '14365', '33624', '10390', '1944', '1951'];
@@ -751,7 +773,7 @@ export function CorrectAiApp() {
       reviewStatus: 'DETECTED',
       detectedAnswers,
       detectedAnswersCount: draft?.detectedAnswersCount ?? detectedAnswers.length,
-      calculatedScore: draft?.calculatedScore ?? '--',
+      calculatedScore: computedScore,
       ocrResult: draft?.ocrResult
         ? {
             ...draft.ocrResult,
@@ -1210,8 +1232,11 @@ export function CorrectAiApp() {
         <ProfessorNewExamScreen
           activeTab={activeTab}
           classesData={classesWithCounts}
+          examsData={examsData}
           onCreateExam={createExam}
+          onUpdateExam={updateExam}
           onNavigate={navigate}
+          selectedExam={selectedExamForRender}
         />
       );
     case 'professor-exam-menu':
@@ -1342,15 +1367,15 @@ export function CorrectAiApp() {
         />
       );
     case 'student-home':
-      return <StudentHomeScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} />;
+      return <StudentHomeScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
     case 'student-exams':
-      return <StudentExamsScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} />;
+      return <StudentExamsScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
     case 'student-exam-result':
-      return <StudentExamResultScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} />;
+      return <StudentExamResultScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
     case 'student-report':
-      return <StudentReportScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} />;
+      return <StudentReportScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
     case 'student-profile':
-      return <StudentProfileScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={selectedStudentForRender} studentsData={studentsData} />;
+      return <StudentProfileScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
     case 'login':
     default:
       return <LoginScreen onLogin={login} onNavigate={navigate} />;

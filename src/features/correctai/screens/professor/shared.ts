@@ -30,7 +30,7 @@ export type ProfessorScreenProps = {
   scannerMode?: 'copies' | 'key';
   onSelectStudent?: (student: Student) => void;
   onSelectClass?: (classItem: ClassRoom) => void;
-  onSelectExam?: (exam: Exam) => void;
+  onSelectExam?: (exam: Exam | null) => void;
   onSelectQuestion?: (questionNumber: number) => void;
   onSelectScannedCopy?: (copy: ScannedCopy) => void;
   onSetScannerMode?: (mode: 'copies' | 'key') => void;

@@ -117,7 +117,7 @@ export function ProfessorExamsScreen({
               paddingBottom: 84 + Math.max(insets.bottom, spacing.md),
             },
           ]}>
-          <FloatingButton onPress={() => onNavigate('professor-new-exam')} style={styles.fabButton}>
+          <FloatingButton onPress={() => { onSelectExam?.(null); onNavigate('professor-new-exam'); }} style={styles.fabButton}>
             Nouvel examen
           </FloatingButton>
         </View>

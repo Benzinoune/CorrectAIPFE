@@ -209,7 +209,7 @@ export function ProfessorAccountScreen({
       'Voulez-vous vraiment vous deconnecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Se deconnecter', style: 'destructive', onPress: () => onLogin?.('professor') },
+        { text: 'Se deconnecter', style: 'destructive', onPress: () => onNavigate('login') },
       ],
     );
   };

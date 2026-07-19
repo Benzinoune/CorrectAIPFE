@@ -316,6 +316,7 @@ export function ProfessorClassDetailScreen({
   return (
     <ScreenFrame
       compactHeader
+      scrollable={false}
       onBack={() => onNavigate('professor-classes')}
       rightAction={{ icon: Icons.edit, onPress: () => setIsEditOpen(true) }}
       title="Detail Classe">

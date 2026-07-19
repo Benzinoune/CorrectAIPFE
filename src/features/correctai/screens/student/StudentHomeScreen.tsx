@@ -1,17 +1,25 @@
 import { useMemo } from 'react';
-import { Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 
 import { Card, Icons, ScreenFrame, ScoreHero, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
-import { exams, recentResults, studentTabs } from '@/features/correctai/data/mock-data';
-import { StudentScreenProps, styles, tabPress } from './shared';
+import { studentTabs } from '@/features/correctai/data/mock-data';
+import { StudentScreenProps, styles, tabPress, getStudentVisibleExams, getStudentScannedCopy } from './shared';
 
-export function StudentHomeScreen({ activeTab, onNavigate, studentsData, selectedStudent, examsData }: StudentScreenProps) {
+export function StudentHomeScreen({ activeTab, onNavigate, studentsData, selectedStudent, examsData, onSelectExam }: StudentScreenProps) {
   const student = selectedStudent ?? studentsData[0];
   const greeting = student ? `Bonjour, ${student.firstName ?? student.initials}` : 'Bonjour';
-  const studentExamsList = examsData ?? exams;
+  
+  const studentExamsList = useMemo(() => getStudentVisibleExams(student, examsData), [student, examsData]);
   const totalExams = studentExamsList.length;
-  const totalPassed = studentExamsList.filter((e) => e.status === 'TERMINE').length;
-  const result = recentResults;
+  
+  // "Passed" = exam has a corrected copy for this student (reviewStatus CORRECTED or real score like "X/Y")
+  const passedExams = useMemo(() => studentExamsList.filter((e) => {
+    const copy = getStudentScannedCopy(e, student);
+    if (!copy) return false;
+    const hasRealScore = copy.calculatedScore && copy.calculatedScore !== '--' && copy.calculatedScore.includes('/');
+    return copy.reviewStatus === 'CORRECTED' || hasRealScore;
+  }), [studentExamsList, student]);
+  const totalPassed = passedExams.length;
 
   const stats = useMemo(() => [
     { label: 'Examens passes', value: String(totalPassed), tone: 'success' as const },
@@ -24,22 +32,32 @@ export function StudentHomeScreen({ activeTab, onNavigate, studentsData, selecte
       greeting={greeting}
       onTabPress={tabPress(onNavigate)}
       tabs={studentTabs}>
-      <ScoreHero label="Bien" score={result.length > 0 ? result[0].score ?? '14.5/20' : '14.5/20'} />
+      <ScoreHero label="Moyenne" score={passedExams.length > 0 ? getStudentScannedCopy(passedExams[0], student)?.calculatedScore ?? 'N/A' : 'N/A'} />
       <SectionTitle>Statistiques</SectionTitle>
       <StatGrid items={stats} />
       <SectionTitle>Resultats recents</SectionTitle>
       <Card icon={Icons.chart} style={styles.resultsCard} title="Resultats recents">
-        {result.map((r) => (
-          <View key={r.id} style={styles.resultRow}>
-            <View>
-              <Text style={styles.rowTitle}>{r.title}</Text>
-              <Text style={styles.rowSubtitle}>{r.date}</Text>
-            </View>
-            <Text style={[styles.resultScore, r.tone === 'danger' && styles.resultScoreDanger]}>
-              {r.score}
-            </Text>
-          </View>
-        ))}
+        {passedExams.slice(0, 3).map((exam) => {
+          const copy = getStudentScannedCopy(exam, student);
+          const score = copy?.calculatedScore ?? 'En attente';
+          const isDanger = copy && copy.calculatedScore && parseFloat(copy.calculatedScore) < exam.questions / 2;
+          return (
+            <Pressable key={exam.id} onPress={() => { onSelectExam?.(exam); onNavigate('student-exam-result'); }}>
+              <View style={[styles.resultRow, { paddingVertical: 4 }]}>
+                <View>
+                  <Text style={styles.rowTitle}>{exam.name}</Text>
+                  <Text style={styles.rowSubtitle}>{new Date(exam.date).toLocaleDateString('fr-FR')}</Text>
+                </View>
+                <Text style={[styles.resultScore, isDanger && styles.resultScoreDanger]}>
+                  {score}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+        {passedExams.length === 0 && (
+          <Text style={{ textAlign: 'center', color: '#6B7280', marginVertical: 12 }}>Aucun resultat pour le moment.</Text>
+        )}
       </Card>
     </ScreenFrame>
   );

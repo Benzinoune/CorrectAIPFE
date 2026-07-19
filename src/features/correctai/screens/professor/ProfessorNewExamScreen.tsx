@@ -35,13 +35,13 @@ type ExamFormErrors = {
   classes?: string;
 };
 
-function validateExamForm(values: { name: string; subject: string; selectedClasses: string[]; existingExams: { name: string }[] }): ExamFormErrors {
+function validateExamForm(values: { name: string; subject: string; selectedClasses: string[]; existingExams: { id: string, name: string }[]; currentExamId?: string }): ExamFormErrors {
   const errors: ExamFormErrors = {};
   const trimmedName = values.name.trim();
 
   if (!trimmedName) {
     errors.name = "Le nom de l'examen est requis.";
-  } else if (values.existingExams.some((e) => normalizeSearch(e.name) === normalizeSearch(trimmedName))) {
+  } else if (values.existingExams.some((e) => e.id !== values.currentExamId && normalizeSearch(e.name) === normalizeSearch(trimmedName))) {
     errors.name = 'Un examen avec ce nom existe déjà.';
   }
 
@@ -238,14 +238,17 @@ function ResponseSheetPickerModal({
   );
 }
 
-export function ProfessorNewExamScreen({ classesData, examsData, onCreateExam, onNavigate }: ProfessorScreenProps) {
+export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, onCreateExam, onUpdateExam, onNavigate }: ProfessorScreenProps) {
   const classList = classesData ?? classes;
   const examList = examsData ?? exams;
-  const [examName, setExamName] = useState('');
-  const [subjectName, setSubjectName] = useState('');
-  const [responseSheetId, setResponseSheetId] = useState<ResponseSheetId>('20');
-  const [examDate, setExamDate] = useState(() => new Date());
-  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
+  const [examName, setExamName] = useState(selectedExam?.name ?? '');
+  const [subjectName, setSubjectName] = useState(selectedExam?.subject ?? '');
+  const [responseSheetId, setResponseSheetId] = useState<ResponseSheetId>(selectedExam?.responseSheetId ?? '20');
+  
+  const initialDate = selectedExam ? new Date(selectedExam.date) : new Date();
+  const [examDate, setExamDate] = useState(() => (Number.isNaN(initialDate.getTime()) ? new Date() : initialDate));
+  
+  const [selectedClasses, setSelectedClasses] = useState<string[]>(selectedExam?.classIds ?? []);
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isResponseSheetOpen, setIsResponseSheetOpen] = useState(false);
   const [formErrors, setFormErrors] = useState<ExamFormErrors>({});
@@ -268,6 +271,7 @@ export function ProfessorNewExamScreen({ classesData, examsData, onCreateExam, o
       subject: subjectName,
       selectedClasses,
       existingExams: examList,
+      currentExamId: selectedExam?.id,
     });
 
     setFormErrors(nextErrors);
@@ -277,25 +281,40 @@ export function ProfessorNewExamScreen({ classesData, examsData, onCreateExam, o
     }
 
     const resolvedClasses = classNamesFromIds(selectedClasses, classList);
-    const nextExam: Omit<Exam, 'id'> = {
-      name: examName.trim(),
-      subject: subjectName.trim(),
-      className: resolvedClasses.length > 0 ? resolvedClasses.join(', ') : 'Aucune classe',
-      classIds: [...selectedClasses],
-      date: formatExamDateForStorage(examDate),
-      copies: 0,
-      status: 'BROUILLON',
-      questions: questionCount,
-      establishmentId: '',
-      responseSheetId: selectedResponseSheet.id,
-    };
-
-    onCreateExam?.(nextExam);
-    onNavigate('professor-exam-menu');
+    
+    if (selectedExam) {
+      const updatedExam: Exam = {
+        ...selectedExam,
+        name: examName.trim(),
+        subject: subjectName.trim(),
+        className: resolvedClasses.length > 0 ? resolvedClasses.join(', ') : 'Aucune classe',
+        classIds: [...selectedClasses],
+        date: formatExamDateForStorage(examDate),
+        questions: questionCount,
+        responseSheetId: selectedResponseSheet.id,
+      };
+      onUpdateExam?.(updatedExam);
+      onNavigate('professor-exam-menu');
+    } else {
+      const nextExam: Omit<Exam, 'id'> = {
+        name: examName.trim(),
+        subject: subjectName.trim(),
+        className: resolvedClasses.length > 0 ? resolvedClasses.join(', ') : 'Aucune classe',
+        classIds: [...selectedClasses],
+        date: formatExamDateForStorage(examDate),
+        copies: 0,
+        status: 'BROUILLON',
+        questions: questionCount,
+        establishmentId: '',
+        responseSheetId: selectedResponseSheet.id,
+      };
+      onCreateExam?.(nextExam);
+      onNavigate('professor-exam-menu');
+    }
   };
 
   return (
-    <ScreenFrame compactHeader scrollable={false} onBack={() => onNavigate('professor-exams')} title="Nouvel Examen">
+    <ScreenFrame compactHeader scrollable={false} onBack={() => onNavigate(selectedExam ? 'professor-exam-menu' : 'professor-exams')} title={selectedExam ? "Modifier l'examen" : "Nouvel Examen"}>
       <View style={styles.newExamPage}>
         <View style={styles.newExamFields}>
           <Field
@@ -401,7 +420,8 @@ export function ProfessorNewExamScreen({ classesData, examsData, onCreateExam, o
         </Card>
 
         <FormActions
-          onCancel={() => onNavigate('professor-exams')}
+          submitLabel={selectedExam ? "Mettre à jour" : "Créer l'examen"}
+          onCancel={() => onNavigate(selectedExam ? 'professor-exam-menu' : 'professor-exams')}
           onSubmit={handleSubmit}
         />
       </View>

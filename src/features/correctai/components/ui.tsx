@@ -69,6 +69,7 @@ export const Icons = {
   business: makeIcon('business-outline'),
   folder: makeIcon('folder-outline'),
   filter: makeIcon('funnel-outline'),
+  logout: makeIcon('log-out-outline'),
 };
 
 const { colors, radius, spacing } = correctAiTheme;
