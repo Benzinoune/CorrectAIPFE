@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import {
   AdminHomeScreen,
@@ -457,9 +457,13 @@ export function CorrectAiApp() {
       selectedScannedCopyForRender?.id ?? 'none',
     );
   }, [screen, selectedExamForRender, selectedScannedCopyForRender]);
+  const previousScreenRef = useRef<AppScreen | null>(null);
 
   const navigate = (nextScreen: AppScreen) => {
-    setScreen(nextScreen);
+    if (nextScreen !== screen) {
+      previousScreenRef.current = screen;
+      setScreen(nextScreen);
+    }
   };
 
   const [adminEstablishmentId, setAdminEstablishmentId] = useState<string | undefined>(undefined);
@@ -1227,6 +1231,7 @@ export function CorrectAiApp() {
           onNavigate={navigate}
           selectedStudent={selectedStudentForRender}
           studentsData={studentsData}
+          previousScreen={previousScreen}
         />
       );
     case 'professor-student-edit':
@@ -1249,6 +1254,8 @@ export function CorrectAiApp() {
           onCreateStudent={createStudent}
           onNavigate={navigate}
           selectedClass={selectedClassForRender}
+          studentsData={studentsData}
+          previousScreen={previousScreenRef.current}
         />
       );
     case 'professor-classes':
@@ -1295,6 +1302,7 @@ export function CorrectAiApp() {
           onUpdateExam={updateExam}
           selectedExam={selectedExamForRender}
           selectedClass={selectedClassForRender}
+          previousScreen={previousScreenRef.current}
         />
       );
     case 'professor-exam-menu':

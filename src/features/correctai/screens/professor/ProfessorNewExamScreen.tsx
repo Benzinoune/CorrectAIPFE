@@ -238,7 +238,7 @@ function ResponseSheetPickerModal({
   );
 }
 
-export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, selectedClass, onCreateExam, onUpdateExam, onNavigate }: ProfessorScreenProps) {
+export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, selectedClass, onCreateExam, onUpdateExam, onNavigate, previousScreen }: ProfessorScreenProps) {
   const classList = classesData ?? classes;
   const examList = examsData ?? exams;
   const [examName, setExamName] = useState(selectedExam?.name ?? '');
@@ -294,7 +294,6 @@ export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, s
         responseSheetId: selectedResponseSheet.id,
       };
       onUpdateExam?.(updatedExam);
-      onNavigate('professor-exam-menu');
     } else {
       const nextExam: Omit<Exam, 'id'> = {
         name: examName.trim(),
@@ -309,12 +308,25 @@ export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, s
         responseSheetId: selectedResponseSheet.id,
       };
       onCreateExam?.(nextExam);
-      onNavigate('professor-exam-menu');
+    }
+    
+    if (previousScreen === 'professor-class-detail') {
+      onNavigate('professor-class-detail');
+    } else {
+      onNavigate(selectedExam ? 'professor-exam-menu' : 'professor-exam-menu');
+    }
+  };
+
+  const handleCancel = () => {
+    if (previousScreen === 'professor-class-detail') {
+      onNavigate('professor-class-detail');
+    } else {
+      onNavigate(selectedExam ? 'professor-exam-menu' : 'professor-exams');
     }
   };
 
   return (
-    <ScreenFrame compactHeader scrollable={false} onBack={() => onNavigate(selectedExam ? 'professor-exam-menu' : 'professor-exams')} title={selectedExam ? "Modifier l'examen" : "Nouvel Examen"}>
+    <ScreenFrame compactHeader scrollable={false} onBack={handleCancel} title={selectedExam ? "Modifier l'examen" : "Nouvel Examen"}>
       <View style={styles.newExamPage}>
         <View style={styles.newExamFields}>
           <Field

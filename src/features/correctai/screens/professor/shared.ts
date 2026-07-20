@@ -21,6 +21,7 @@ const { colors, spacing, radius } = correctAiTheme;
 
 export type ProfessorScreenProps = {
   activeTab: TabId;
+  previousScreen?: AppScreen | null;
   onNavigate: (screen: AppScreen) => void;
   selectedStudent?: Student | null;
   selectedClass?: ClassRoom | null;

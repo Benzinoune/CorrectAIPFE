@@ -18,29 +18,16 @@ export function ProfessorExamsScreen({
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [sortAscending, setSortAscending] = useState(false);
-  const [statusFilter, setStatusFilter] = useState('all');
   const examList = examsData ?? exams;
-  const statusOptions = [
-    { id: 'all', label: 'Tous' },
-    { id: 'ACTIF', label: 'Actif' },
-    { id: 'BROUILLON', label: 'Brouillon' },
-    { id: 'EN COURS', label: 'En cours' },
-    { id: 'A VENIR', label: 'A venir' },
-    { id: 'TERMINE', label: 'Termine' },
-  ];
 
   const visibleExams = useMemo(() => {
     const normalizedQuery = normalizeSearch(query.trim());
-    let filtered = examList;
-    if (statusFilter !== 'all') {
-      filtered = filtered.filter((exam) => exam.status === statusFilter);
-    }
-    const sortedExams = sortExamsByDate(filtered, sortAscending);
+    const sortedExams = sortExamsByDate(examList, sortAscending);
     if (!normalizedQuery) {
       return sortedExams;
     }
     return sortedExams.filter((exam) => normalizeSearch(exam.name).includes(normalizedQuery));
-  }, [examList, query, sortAscending, statusFilter]);
+  }, [examList, query, sortAscending]);
 
   const sortIcon = sortAscending ? 'arrow-up-outline' : 'arrow-down-outline';
 
@@ -75,7 +62,6 @@ export function ProfessorExamsScreen({
           </Pressable>
         </View>
 
-        <FilterChips active={statusFilter} options={statusOptions} onChange={setStatusFilter} />
 
         <FlatList
           data={visibleExams}

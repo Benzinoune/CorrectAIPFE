@@ -15,6 +15,7 @@ export function ProfessorAddStudentScreen({
   studentsData,
   onCreateStudent,
   selectedClass,
+  previousScreen,
 }: ProfessorScreenProps) {
   const classList = classesData ?? classes;
   const studentList = studentsData ?? students;
@@ -49,7 +50,6 @@ export function ProfessorAddStudentScreen({
     if (Object.keys(nextErrors).length > 0) {
       return;
     }
-
     onCreateStudent?.({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -58,11 +58,24 @@ export function ProfessorAddStudentScreen({
       password,
       classes: [...selectedClasses],
     });
-    onNavigate('professor-student-detail');
+    
+    if (previousScreen === 'professor-class-detail') {
+      onNavigate('professor-class-detail');
+    } else {
+      onNavigate('professor-student-detail');
+    }
+  };
+
+  const handleCancel = () => {
+    if (previousScreen === 'professor-class-detail') {
+      onNavigate('professor-class-detail');
+    } else {
+      onNavigate('professor-students');
+    }
   };
 
   return (
-    <ScreenFrame compactHeader scrollable={false} onBack={() => onNavigate('professor-students')} title="Ajouter Etudiant">
+    <ScreenFrame compactHeader scrollable={true} onBack={handleCancel} title="Ajouter Etudiant">
       <View style={styles.editStudentPage}>
         <View style={styles.editStudentFields}>
           <StudentFormField
@@ -115,7 +128,7 @@ export function ProfessorAddStudentScreen({
             extraData={selectedClasses}
             keyExtractor={(item) => item.id}
             keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
+            scrollEnabled={false}
             renderItem={({ item }) => {
               const selected = selectedClasses.includes(item.id);
               return (
@@ -153,7 +166,7 @@ export function ProfessorAddStudentScreen({
           <PrimaryButton icon={Icons.addCircle} onPress={handleSubmit}>
             Ajouter
           </PrimaryButton>
-          <PrimaryButton icon={Icons.close} onPress={() => onNavigate('professor-students')} variant="soft">
+          <PrimaryButton icon={Icons.close} onPress={handleCancel} variant="soft">
             Annuler
           </PrimaryButton>
         </View>
@@ -169,20 +182,15 @@ const styles = StyleSheet.create({
   studentFormInputError: { borderColor: colors.danger },
   studentFormError: { color: colors.danger, fontSize: 12, fontWeight: '700' },
   editStudentPage: {
-    flex: 1,
-    minHeight: 0,
     gap: spacing.md,
+    paddingBottom: spacing.xl,
   },
   editStudentFields: {
     gap: spacing.md,
   },
   classSelectCard: {
-    flex: 1,
-    minHeight: 0,
   },
   classSelectList: {
-    flex: 1,
-    minHeight: 0,
   },
   classSelectListContent: {
     paddingBottom: spacing.xs,

@@ -35,10 +35,7 @@ export function AdminAccountScreen({ activeTab, onNavigate, onLogout, adminsData
     <ScreenFrame
       activeTab={activeTab}
       greeting={greeting}
-      onTabPress={(tabId) => {
-        const tab = adminTabs.find((t) => t.id === tabId);
-        if (tab) onNavigate(tab.screen);
-      }}
+      onTabPress={(item) => onNavigate(item.screen)}
       tabs={adminTabs}>
       <View style={{ marginBottom: 24, alignItems: 'center' }}>
         <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#6366F1', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>

@@ -34,10 +34,7 @@ export function SuperAdminAccountScreen({ activeTab, onNavigate, onLogout, logge
     <ScreenFrame
       activeTab={activeTab}
       greeting={greeting}
-      onTabPress={(tabId) => {
-        const tab = superAdminTabs.find((t) => t.id === tabId);
-        if (tab) onNavigate(tab.screen);
-      }}
+      onTabPress={(item) => onNavigate(item.screen)}
       tabs={superAdminTabs}>
       <View style={{ marginBottom: 24, alignItems: 'center' }}>
         <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
