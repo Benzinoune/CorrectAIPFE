@@ -26,6 +26,7 @@ const { colors, spacing, radius } = correctAiTheme;
 
 export type SuperAdminScreenProps = {
   activeTab: NavItem['id'];
+  loggedInSuperAdmin?: Admin | null;
   onNavigate: (screen: AppScreen) => void;
   establishmentsData: Establishment[];
   onSelectEstablishment?: (establishment: Establishment) => void;

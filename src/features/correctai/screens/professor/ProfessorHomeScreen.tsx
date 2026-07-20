@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { Card, Icon, Icons, ScreenFrame, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
-import { classes, exams, examClassScores, professorTabs, students } from '@/features/correctai/data/mock-data';
+import { classes, exams, professorTabs, students } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { ClassRoom, Student } from '@/features/correctai/types';
 import { ProfessorScreenProps, studentClassLabels, studentDisplayName, styles, tabPress } from './shared';
@@ -40,6 +40,7 @@ export function ProfessorHomeScreen({
   onNavigate,
   classesData,
   examsData,
+  selectedProfessor,
   studentsData,
 }: ProfessorScreenProps) {
   const examList = examsData ?? exams;
@@ -64,17 +65,57 @@ export function ProfessorHomeScreen({
   const examColors = ['#6C5CFF', '#00B884', '#F2A000', '#F04452', '#2F80D1', '#A855F7'];
 
   const chartLines = useMemo(() => {
-    const validScores = examClassScores.filter((s) => classNames.includes(s.className));
-    const examIds = [...new Set(validScores.map((s) => s.examId))];
-    return examIds.map((examId, ei) => {
-      const name = validScores.find((s) => s.examId === examId)?.examName ?? examId;
-      const scores = classNames.map((cn) => {
-        const found = validScores.find((s) => s.examId === examId && s.className === cn);
-        return { className: cn, score: found?.averageScore ?? null };
-      });
-      return { examId, examName: name, scores, color: examColors[ei % examColors.length] };
-    });
-  }, [classNames]);
+    return examList
+      .filter((exam) => exam.classIds && exam.classIds.length > 0)
+      .map((exam, ei) => {
+        const scores = classNames.map((cn) => {
+          // Check if this class is part of this exam
+          const classMatch = classList.find((c) => c.name === cn);
+          if (!classMatch || !exam.classIds?.includes(classMatch.id)) {
+            return { className: cn, score: null };
+          }
+
+          // Calculate average score for this class from scannedCopies
+          if (!exam.scannedCopies || exam.scannedCopies.length === 0) {
+             return { className: cn, score: null };
+          }
+          
+          let totalScore = 0;
+          let count = 0;
+          
+          exam.scannedCopies.forEach(copy => {
+             // Basic matching: in a real app, copy should have a classId.
+             // For now, if the student exists and is in the class, count it.
+             const student = studentList.find(s => 
+               s.matricule === copy.matricule || 
+               s.correctAiId === copy.matricule ||
+               (s.firstName + ' ' + s.lastName).toLowerCase() === copy.studentName?.toLowerCase()
+             );
+             
+             if (student && student.classes.some(cRef => cRef.toLowerCase() === classMatch.name.toLowerCase() || cRef === classMatch.id)) {
+                if (copy.calculatedScore && copy.calculatedScore !== '--' && copy.calculatedScore.includes('/')) {
+                   const [num] = copy.calculatedScore.split('/');
+                   const scoreVal = parseFloat(num);
+                   if (!isNaN(scoreVal)) {
+                      totalScore += scoreVal;
+                      count++;
+                   }
+                }
+             }
+          });
+
+          return { className: cn, score: count > 0 ? parseFloat((totalScore / count).toFixed(1)) : null };
+        });
+
+        // Only include exams that have at least one score
+        if (!scores.some(s => s.score !== null)) {
+            return null;
+        }
+
+        return { examId: exam.id, examName: exam.name, scores, color: examColors[ei % examColors.length] };
+      })
+      .filter(Boolean) as { examId: string; examName: string; scores: { className: string; score: number | null }[]; color: string }[];
+  }, [classNames, examList, classList, studentList]);
 
   const [tooltip, setTooltip] = useState<{ x: number; y: number; examName: string; className: string; score: number } | null>(null);
   const [chartWidth, setChartWidth] = useState(0);
@@ -172,7 +213,7 @@ export function ProfessorHomeScreen({
   return (
     <ScreenFrame
       activeTab={activeTab}
-      greeting="Bonjour, Professeur"
+      greeting={selectedProfessor ? `Bonjour, ${selectedProfessor.name.split(' ')[0]}` : 'Bonjour, Professeur'}
       onTabPress={tabPress(onNavigate)}
       tabs={professorTabs}>
       <StatGrid items={homeStats} />

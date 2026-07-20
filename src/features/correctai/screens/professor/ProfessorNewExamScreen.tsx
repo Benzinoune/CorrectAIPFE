@@ -238,7 +238,7 @@ function ResponseSheetPickerModal({
   );
 }
 
-export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, onCreateExam, onUpdateExam, onNavigate }: ProfessorScreenProps) {
+export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, selectedClass, onCreateExam, onUpdateExam, onNavigate }: ProfessorScreenProps) {
   const classList = classesData ?? classes;
   const examList = examsData ?? exams;
   const [examName, setExamName] = useState(selectedExam?.name ?? '');
@@ -248,7 +248,7 @@ export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, o
   const initialDate = selectedExam ? new Date(selectedExam.date) : new Date();
   const [examDate, setExamDate] = useState(() => (Number.isNaN(initialDate.getTime()) ? new Date() : initialDate));
   
-  const [selectedClasses, setSelectedClasses] = useState<string[]>(selectedExam?.classIds ?? []);
+  const [selectedClasses, setSelectedClasses] = useState<string[]>(selectedExam?.classIds ?? (selectedClass ? [selectedClass.id] : []));
   const [isDatePickerOpen, setIsDatePickerOpen] = useState(false);
   const [isResponseSheetOpen, setIsResponseSheetOpen] = useState(false);
   const [formErrors, setFormErrors] = useState<ExamFormErrors>({});

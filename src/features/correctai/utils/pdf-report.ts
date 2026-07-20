@@ -20,6 +20,18 @@ const CSS_STYLES = `
     box-sizing: border-box;
     page-break-after: always;
   }
+  .page.page-compact {
+    padding: 10px 40px;
+  }
+  .page.page-compact .brand {
+    margin-bottom: 5px;
+  }
+  .page.page-compact .summary-table {
+    margin-bottom: 5px;
+  }
+  .page.page-compact .image-container {
+    margin-bottom: 5px;
+  }
   .left-col {
     flex: 1;
     padding-right: 30px;
@@ -117,6 +129,15 @@ const CSS_STYLES = `
   .details-table tr:nth-child(even) td {
     background-color: #F9FAFC;
   }
+  .details-table.compact th, .details-table.compact td {
+    padding: 3px 6px;
+    font-size: 9px;
+  }
+  .details-table.super-compact th, .details-table.super-compact td {
+    padding: 0px 1px;
+    font-size: 5.5px;
+    line-height: 1;
+  }
   .score-danger { color: #F04452; font-weight: 700; }
   .score-success { color: #00B884; font-weight: 700; }
   .score-warning { color: #F2A000; font-weight: 700; }
@@ -192,12 +213,39 @@ function generateCopyHtml(copy: ScannedCopy, exam: Exam, imageBase64: string | n
     `;
   }
 
+  let tableClass = 'details-table';
+  const numRows = summary.rows.length;
+  if (numRows > 60) {
+    tableClass = 'details-table super-compact';
+  } else if (numRows > 30) {
+    tableClass = 'details-table compact';
+  }
+
+  const rightColHtml = `
+    <div class="details-table-wrap">
+      <table class="${tableClass}">
+        <thead>
+          <tr>
+            <th>N°</th>
+            <th>Clé</th>
+            <th>Étu</th>
+            <th>Pts</th>
+            <th>Max</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${rowsHtml}
+        </tbody>
+      </table>
+    </div>
+  `;
+
   const imageHtml = imageBase64 
     ? `<img src="${imageBase64}" />` 
     : `<div style="color:#A1A7B4; align-self:center; margin-top:50px;">Aucune image disponible</div>`;
 
   return `
-    <div class="page">
+    <div class="page ${numRows > 60 ? 'page-compact' : ''}">
       <div class="left-col">
         <div class="brand">
           <div class="brand-icon">✓</div>
@@ -249,22 +297,7 @@ function generateCopyHtml(copy: ScannedCopy, exam: Exam, imageBase64: string | n
       </div>
 
       <div class="right-col">
-        <div class="details-table-wrap">
-          <table class="details-table">
-            <thead>
-              <tr>
-                <th>N°</th>
-                <th>Clé</th>
-                <th>Étu</th>
-                <th>Pts</th>
-                <th>Max</th>
-              </tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
-        </div>
+        ${rightColHtml}
       </div>
     </div>
   `;

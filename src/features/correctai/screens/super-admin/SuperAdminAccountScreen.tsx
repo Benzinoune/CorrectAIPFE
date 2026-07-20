@@ -2,17 +2,11 @@ import { Alert, Text, View } from 'react-native';
 
 import { Card, Icons, InfoRow, PrimaryButton, ScreenFrame, SectionTitle } from '@/features/correctai/components/ui';
 import { superAdminTabs, superAdminUser } from '@/features/correctai/data/mock-data';
-import type { AppScreen, NavItem } from '@/features/correctai/types';
+import { SuperAdminScreenProps } from './shared';
 
-type SuperAdminScreenProps = {
-  activeTab: NavItem['id'];
-  onNavigate: (screen: AppScreen) => void;
-  onLogout: () => void;
-};
-
-export function SuperAdminAccountScreen({ activeTab, onNavigate, onLogout }: SuperAdminScreenProps) {
-  const admin = superAdminUser;
-  const greeting = `Profil Super Admin`;
+export function SuperAdminAccountScreen({ activeTab, onNavigate, onLogout, loggedInSuperAdmin }: SuperAdminScreenProps & { onLogout: () => void }) {
+  const admin = loggedInSuperAdmin ?? superAdminUser;
+  const greeting = `Bonjour, ${admin.name.split(' ')[0]}`;
 
   const initials = admin.name
       .split(' ')
@@ -57,14 +51,13 @@ export function SuperAdminAccountScreen({ activeTab, onNavigate, onLogout }: Sup
       <Card icon={Icons.person} style={{ marginBottom: 24 }} title="Détails Personnels">
         <InfoRow icon={Icons.user} label="Nom complet" value={admin.name} />
         <InfoRow icon={Icons.mail} label="Email" value={admin.email} />
-        <InfoRow icon={Icons.phone} label="Téléphone" value="+213 555 12 34 56" />
       </Card>
 
       <SectionTitle>Informations du Compte</SectionTitle>
       <Card icon={Icons.gear} style={{ marginBottom: 24 }} title="Détails du Compte">
         <InfoRow icon={Icons.shield} label="Rôle" value="Super Administrateur" />
         <InfoRow icon={Icons.check} label="Statut" value="ACTIF" />
-        <InfoRow icon={Icons.clock} label="Créé le" value="01/01/2023" />
+        <InfoRow icon={Icons.clock} label="Créé le" value={new Date(admin.createdAt).toLocaleDateString('fr-FR')} />
       </Card>
 
       <View style={{ marginTop: 24, paddingHorizontal: 16, paddingBottom: 32 }}>

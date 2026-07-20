@@ -29,6 +29,7 @@ export const superAdminUser = {
   name: 'Super Admin',
   email: 'super@correctai.test',
   password: 'Super@123',
+  createdAt: '2023-01-01T00:00:00Z',
 };
 
 export const admins: Admin[] = [

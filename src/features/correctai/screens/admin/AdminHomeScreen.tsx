@@ -4,13 +4,14 @@ import { StyleSheet, Text, View } from 'react-native';
 import { Card, PersonRow, ScreenFrame, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
 import { adminTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
-import type { AppScreen, NavItem, Professor, ProfessorStatus, Tone } from '@/features/correctai/types';
+import type { Admin, AppScreen, NavItem, Professor, ProfessorStatus, Tone } from '@/features/correctai/types';
 
 const { colors, spacing, radius } = correctAiTheme;
 
 type AdminScreenProps = {
   activeTab: NavItem['id'];
   adminEstablishmentId?: string;
+  loggedInAdmin?: Admin | null;
   onNavigate: (screen: AppScreen) => void;
   onSelectProfessor?: (professor: Professor) => void;
   professorsData?: Professor[];
@@ -22,7 +23,7 @@ function statusTone(status: ProfessorStatus): Tone {
   return 'neutral';
 }
 
-export function AdminHomeScreen({ activeTab, adminEstablishmentId, onNavigate, onSelectProfessor, professorsData }: AdminScreenProps) {
+export function AdminHomeScreen({ activeTab, adminEstablishmentId, loggedInAdmin, onNavigate, onSelectProfessor, professorsData }: AdminScreenProps) {
   const professorList = useMemo(
     () => (professorsData ?? []).filter((p) => !adminEstablishmentId || p.establishmentId === adminEstablishmentId),
     [adminEstablishmentId, professorsData],
@@ -49,7 +50,7 @@ export function AdminHomeScreen({ activeTab, adminEstablishmentId, onNavigate, o
   return (
     <ScreenFrame
       activeTab={activeTab}
-      greeting="Bonjour, Admin"
+      greeting={loggedInAdmin ? `Bonjour, ${loggedInAdmin.name.split(' ')[0]}` : 'Bonjour, Admin'}
       onTabPress={(item) => onNavigate(item.screen)}
       tabs={adminTabs}>
       <View style={styles.page}>

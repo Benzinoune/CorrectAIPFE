@@ -22,7 +22,7 @@ import {
   StatGrid,
   TextButton,
 } from '@/features/correctai/components/ui';
-import { classes, exams, professorTabs, students } from '@/features/correctai/data/mock-data';
+import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
 import { ProfessorScreenProps, tabPress } from './shared';
 
@@ -147,9 +147,9 @@ export function ProfessorAccountScreen({
   studentsData,
 }: ProfessorScreenProps) {
   const professor = selectedProfessor;
-  const examList = examsData ?? exams;
-  const studentList = studentsData ?? students;
-  const classList = classesData ?? classes;
+  const examList = examsData ?? [];
+  const studentList = studentsData ?? [];
+  const classList = classesData ?? [];
   const professorClasses = useMemo(
     () => classList.filter((c) => c.establishmentId === professor?.establishmentId),
     [classList, professor],

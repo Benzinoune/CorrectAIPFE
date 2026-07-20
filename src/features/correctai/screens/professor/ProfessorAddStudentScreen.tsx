@@ -14,6 +14,7 @@ export function ProfessorAddStudentScreen({
   classesData,
   studentsData,
   onCreateStudent,
+  selectedClass,
 }: ProfessorScreenProps) {
   const classList = classesData ?? classes;
   const studentList = studentsData ?? students;
@@ -22,7 +23,9 @@ export function ProfessorAddStudentScreen({
   const [matricule, setMatricule] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
+  const [selectedClasses, setSelectedClasses] = useState<string[]>(
+    selectedClass ? [selectedClass.id] : []
+  );
   const [formErrors, setFormErrors] = useState<StudentFormErrors>({});
 
   const toggleClass = (classId: string) => {

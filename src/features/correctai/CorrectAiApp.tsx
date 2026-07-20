@@ -63,6 +63,7 @@ import {
   exams as initialExams,
   professors as initialProfessors,
   students as initialStudents,
+  superAdminUser,
 } from '@/features/correctai/data/mock-data';
 import type {
   Admin,
@@ -462,9 +463,38 @@ export function CorrectAiApp() {
   };
 
   const [adminEstablishmentId, setAdminEstablishmentId] = useState<string | undefined>(undefined);
+  const [loggedInUserId, setLoggedInUserId] = useState<string | null>(null);
+  const [loggedInRole, setLoggedInRole] = useState<UserRole | null>(null);
 
-  const login = (nextRole: UserRole, establishmentId?: string) => {
+  const loggedInProfessor = useMemo(
+    () => (loggedInRole === 'professor' && loggedInUserId ? professorsData.find((p) => p.id === loggedInUserId) ?? null : null),
+    [loggedInRole, loggedInUserId, professorsData],
+  );
+
+  const loggedInAdmin = useMemo(
+    () => (loggedInRole === 'admin' && loggedInUserId ? adminsData.find((a) => a.id === loggedInUserId) ?? null : null),
+    [adminsData, loggedInRole, loggedInUserId],
+  );
+
+  const loggedInStudent = useMemo(
+    () => (loggedInRole === 'student' && loggedInUserId ? studentsData.find((s) => s.id === loggedInUserId) ?? null : null),
+    [loggedInRole, loggedInUserId, studentsData],
+  );
+
+  const login = (nextRole: UserRole, establishmentId?: string, userId?: string) => {
     setAdminEstablishmentId(establishmentId);
+    setLoggedInRole(nextRole);
+    setLoggedInUserId(userId ?? null);
+    if (nextRole === 'professor' && userId) {
+      const prof = professorsData.find((p) => p.id === userId);
+      if (prof) setSelectedProfessor(prof);
+    } else if (nextRole === 'student' && userId) {
+      const student = studentsData.find((s) => s.id === userId);
+      if (student) setSelectedStudent(student);
+    } else if (nextRole === 'admin' && userId) {
+      const admin = adminsData.find((a) => a.id === userId);
+      if (admin) setSelectedAdmin(admin);
+    }
     setScreen(homeScreens[nextRole]);
   };
 
@@ -1000,6 +1030,7 @@ export function CorrectAiApp() {
           copiesCount={totalCopies}
           establishmentsData={establishmentsData}
           examsCount={examsData.length}
+          loggedInSuperAdmin={loggedInRole === 'super_admin' && loggedInUserId === superAdminUser.id ? superAdminUser : undefined}
           onNavigate={navigate}
           onSelectEstablishment={setSelectedEstablishment}
           professorsData={professorsData}
@@ -1110,8 +1141,9 @@ export function CorrectAiApp() {
       return (
         <SuperAdminAccountScreen
           activeTab={activeTab}
+          loggedInSuperAdmin={loggedInRole === 'super_admin' && loggedInUserId === superAdminUser.id ? superAdminUser : undefined}
           onNavigate={navigate}
-          onLogout={() => navigate('login')}
+          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }}
         />
       );
     case 'admin-home':
@@ -1119,6 +1151,7 @@ export function CorrectAiApp() {
         <AdminHomeScreen
           activeTab={activeTab}
           adminEstablishmentId={adminEstablishmentId}
+          loggedInAdmin={loggedInAdmin}
           onNavigate={navigate}
           onSelectProfessor={setSelectedProfessor}
           professorsData={professorsData}
@@ -1159,9 +1192,9 @@ export function CorrectAiApp() {
         <AdminAccountScreen
           activeTab={activeTab}
           onNavigate={navigate}
-          onLogout={() => navigate('login')}
+          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }}
           adminsData={adminsData}
-          selectedAdmin={selectedAdmin}
+          selectedAdmin={loggedInAdmin ?? selectedAdmin}
         />
       );
     case 'professor-home':
@@ -1171,6 +1204,7 @@ export function CorrectAiApp() {
           classesData={classesWithCounts}
           examsData={examsData}
           onNavigate={navigate}
+          selectedProfessor={loggedInProfessor ?? selectedProfessorForRender}
           studentsData={studentsData}
         />
       );
@@ -1214,6 +1248,7 @@ export function CorrectAiApp() {
           classesData={classesWithCounts}
           onCreateStudent={createStudent}
           onNavigate={navigate}
+          selectedClass={selectedClassForRender}
         />
       );
     case 'professor-classes':
@@ -1256,9 +1291,10 @@ export function CorrectAiApp() {
           classesData={classesWithCounts}
           examsData={examsData}
           onCreateExam={createExam}
-          onUpdateExam={updateExam}
           onNavigate={navigate}
+          onUpdateExam={updateExam}
           selectedExam={selectedExamForRender}
+          selectedClass={selectedClassForRender}
         />
       );
     case 'professor-exam-menu':
@@ -1384,20 +1420,20 @@ export function CorrectAiApp() {
           onNavigate={navigate}
           onUpdateProfessor={updateProfessor}
           professorsData={professorsData}
-          selectedProfessor={selectedProfessorForRender}
+          selectedProfessor={loggedInProfessor ?? selectedProfessorForRender}
           studentsData={studentsData}
         />
       );
     case 'student-home':
-      return <StudentHomeScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
+      return <StudentHomeScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
     case 'student-exams':
-      return <StudentExamsScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
+      return <StudentExamsScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
     case 'student-exam-result':
-      return <StudentExamResultScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
+      return <StudentExamResultScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
     case 'student-report':
-      return <StudentReportScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
+      return <StudentReportScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
     case 'student-profile':
-      return <StudentProfileScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setSelectedStudent(null); navigate('login'); }} />;
+      return <StudentProfileScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
     case 'login':
     default:
       return <LoginScreen onLogin={login} onNavigate={navigate} />;
