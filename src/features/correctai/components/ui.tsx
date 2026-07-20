@@ -445,6 +445,7 @@ export function PrimaryButton({
   tone = 'primary',
   variant = 'solid',
   style,
+  disabled = false,
 }: {
   children: ReactNode;
   icon?: IconName;
@@ -452,6 +453,7 @@ export function PrimaryButton({
   tone?: Tone;
   variant?: 'solid' | 'outline' | 'soft';
   style?: StyleProp<ViewStyle>;
+  disabled?: boolean;
 }) {
   const toneSet = toneColors(tone);
   const isSolid = variant === 'solid';
@@ -462,11 +464,12 @@ export function PrimaryButton({
   return (
     <Pressable
       accessibilityRole="button"
-      onPress={onPress}
+      onPress={disabled ? undefined : onPress}
       style={({ pressed }) => [
         styles.primaryButton,
         { backgroundColor, borderColor },
-        pressed && styles.pressed,
+        pressed && !disabled && styles.pressed,
+        disabled && { opacity: 0.5 },
         style,
       ]}>
       {icon ? <Icon name={icon} color={textColor} size={18} /> : null}

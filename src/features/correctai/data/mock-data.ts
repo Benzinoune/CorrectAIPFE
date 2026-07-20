@@ -326,12 +326,14 @@ export const examClassScores: ExamClassScore[] = [
 export const adminTabs: NavItem[] = [
   { id: 'home', label: 'Accueil', screen: 'admin-home' },
   { id: 'professors', label: 'Profs', screen: 'admin-professors' },
+  { id: 'profile', label: 'Profil', screen: 'admin-account' },
 ];
 
 export const superAdminTabs: NavItem[] = [
   { id: 'home', label: 'Accueil', screen: 'super-admin-home' },
   { id: 'establishments', label: 'Etablissements', screen: 'super-admin-establishments' },
   { id: 'professors', label: 'Professeurs', screen: 'super-admin-professors' },
+  { id: 'profile', label: 'Profil', screen: 'super-admin-account' },
 ];
 
 export const professorTabs: NavItem[] = [

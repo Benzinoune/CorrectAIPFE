@@ -9,3 +9,4 @@ export { SuperAdminNewAdminScreen } from './SuperAdminNewAdminScreen';
 export { SuperAdminProfessorsScreen } from './SuperAdminProfessorsScreen';
 export { SuperAdminProfessorDetailScreen } from './SuperAdminProfessorDetailScreen';
 export { SuperAdminNewProfessorScreen } from './SuperAdminNewProfessorScreen';
+export { SuperAdminAccountScreen } from './SuperAdminAccountScreen';

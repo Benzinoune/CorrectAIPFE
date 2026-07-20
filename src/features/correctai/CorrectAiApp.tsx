@@ -5,6 +5,7 @@ import {
   AdminNewProfessorScreen,
   AdminProfessorDetailScreen,
   AdminProfessorsScreen,
+  AdminAccountScreen,
 } from '@/features/correctai/screens/admin';
 import {
   ForgotPasswordScreen,
@@ -24,6 +25,7 @@ import {
   SuperAdminNewProfessorScreen,
   SuperAdminProfessorDetailScreen,
   SuperAdminProfessorsScreen,
+  SuperAdminAccountScreen,
 } from '@/features/correctai/screens/super-admin';
 import {
   ProfessorAccountScreen,
@@ -106,6 +108,8 @@ const activeTabs: Partial<Record<AppScreen, TabId>> = {
   'professor-exams': 'exams',
   'professor-students': 'students',
   'professor-account': 'profile',
+  'admin-account': 'profile',
+  'super-admin-account': 'profile',
   'student-home': 'home',
   'student-exams': 'exams',
   'student-report': 'report',
@@ -1102,6 +1106,14 @@ export function CorrectAiApp() {
           onNavigate={navigate}
         />
       );
+    case 'super-admin-account':
+      return (
+        <SuperAdminAccountScreen
+          activeTab={activeTab}
+          onNavigate={navigate}
+          onLogout={() => navigate('login')}
+        />
+      );
     case 'admin-home':
       return (
         <AdminHomeScreen
@@ -1140,6 +1152,16 @@ export function CorrectAiApp() {
           adminEstablishmentId={adminEstablishmentId}
           onCreateProfessor={createProfessor}
           onNavigate={navigate}
+        />
+      );
+    case 'admin-account':
+      return (
+        <AdminAccountScreen
+          activeTab={activeTab}
+          onNavigate={navigate}
+          onLogout={() => navigate('login')}
+          adminsData={adminsData}
+          selectedAdmin={selectedAdmin}
         />
       );
     case 'professor-home':
