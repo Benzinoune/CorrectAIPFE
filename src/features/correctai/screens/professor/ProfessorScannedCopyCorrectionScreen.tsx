@@ -1,19 +1,24 @@
-import { useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Dimensions,
   Image,
   Platform,
   Pressable,
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from 'react-native';
 
 import { Icon, Icons, PrimaryButton, ScreenFrame, StatusPill, TextButton } from '@/features/correctai/components/ui';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { AppScreen, ClassRoom, Exam, ScannedCopy } from '@/features/correctai/types';
-import { answerSheetChoices, reviewStatusTone } from './shared';
+import {
+  answerSheetChoices,
+  formatQuestionPoints,
+  formatScoreValue,
+  resolveQuestionBank,
+} from './shared';
 
 const { colors, radius, spacing } = correctAiTheme;
 
@@ -37,19 +42,11 @@ function parseAnswerToken(value: string | undefined) {
     .filter(Boolean);
 }
 
-function reviewStatusLabel(status: ScannedCopy['reviewStatus']) {
-  switch (status) {
-    case 'VALIDATED': return 'Validée';
-    case 'CORRECTED': return 'Corrigée';
-    default: return 'Détectée';
-  }
-}
-
-function calculateScore(
-  detected: string[],
-  questionBank: Exam['questionBank'],
-) {
-  const bank = questionBank ?? [];
+function calculateScore(detected: string[], exam: Exam | null) {
+  const bank = resolveQuestionBank(exam);
+  let correctCount = 0;
+  let wrongCount = 0;
+  let unansweredCount = 0;
   let score = 0;
   const max = bank.reduce((sum, q) => sum + q.points, 0);
   const rows = bank.map((q, i) => {
@@ -62,15 +59,25 @@ function calculateScore(
       sortedCorrect.length > 0 &&
       sortedStudent.length === sortedCorrect.length &&
       sortedStudent.every((a, idx) => a === sortedCorrect[idx]);
-    if (isCorrect) score += q.points;
+    if (isCorrect) {
+      score += q.points;
+      correctCount++;
+    } else if (sortedStudent.length === 0) {
+      unansweredCount++;
+    } else {
+      wrongCount++;
+    }
     return {
       number: q.number,
       status: (isCorrect ? 'correct' : sortedStudent.length === 0 ? 'unanswered' : 'wrong') as RevisionStatus,
       correct: sortedCorrect.join('+') || '—',
       student: sortedStudent.join('+') || '—',
+      pointsEarned: isCorrect ? q.points : 0,
+      points: q.points,
     };
   });
-  return { score, max, rows };
+  const percentage = max > 0 ? Math.round((score / max) * 100) : 0;
+  return { score, max, correctCount, wrongCount, unansweredCount, percentage, rows };
 }
 
 export function ProfessorScannedCopyCorrectionScreen({
@@ -81,29 +88,27 @@ export function ProfessorScannedCopyCorrectionScreen({
   selectedExam,
   selectedScannedCopy,
 }: Props) {
-  const windowWidth = Dimensions.get('window').width;
-  const isLargeScreen = windowWidth >= 768;
-
   const exam = selectedExam;
   const copy = selectedScannedCopy;
-  const classList = classesData ?? [];
-
-  const questionBank = useMemo(() => {
-    if (!exam?.questionBank?.length) return [];
-    return exam.questionBank;
-  }, [exam]);
 
   const [localAnswers, setLocalAnswers] = useState<string[]>(() => copy?.detectedAnswers ?? []);
   const [modifiedQuestions, setModifiedQuestions] = useState<Set<number>>(new Set());
   const [selectedQuestion, setSelectedQuestion] = useState<number | null>(null);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saved' | 'validated'>('idle');
   const [zoom, setZoom] = useState(1);
+  const [studentName, setStudentName] = useState(() => copy?.studentName ?? '');
+  const [matricule, setMatricule] = useState(() => copy?.matricule ?? '');
+  const [className, setClassName] = useState(() => copy?.className ?? '');
 
-  const scrollRef = useRef<ScrollView>(null);
+  const summary = useMemo(() => calculateScore(localAnswers, exam ?? null), [localAnswers, exam]);
+  const scoreText = `${formatScoreValue(summary.score)}/${formatScoreValue(summary.max)}`;
 
-  const summary = useMemo(() => calculateScore(localAnswers, questionBank), [localAnswers, questionBank]);
-
-  const scoreText = `${summary.score}/${summary.max}`;
+  const hasStudentEdits =
+    studentName !== (copy?.studentName ?? '') ||
+    matricule !== (copy?.matricule ?? '') ||
+    className !== (copy?.className ?? '');
+  const hasAnswerEdits = modifiedQuestions.size > 0;
+  const hasAnyEdits = hasStudentEdits || hasAnswerEdits;
 
   const handleAnswerPress = (questionNumber: number, choice: string) => {
     setLocalAnswers((current) => {
@@ -131,6 +136,9 @@ export function ProfessorScannedCopyCorrectionScreen({
     if (!copy || !exam) return;
     const nextCopy: ScannedCopy = {
       ...copy,
+      studentName: studentName.trim() || copy.studentName,
+      matricule: matricule.trim() || copy.matricule,
+      className: className.trim() || copy.className,
       detectedAnswers: localAnswers,
       detectedAnswersCount: localAnswers.filter((a) => a.trim()).length,
       reviewStatus: 'CORRECTED',
@@ -146,6 +154,7 @@ export function ProfessorScannedCopyCorrectionScreen({
     onUpdateExam?.({ ...exam, scannedCopies: nextCopies, copies: nextCopies.length });
     onSelectScannedCopy?.(nextCopy);
     setSaveStatus('saved');
+    setModifiedQuestions(new Set());
   };
 
   const handleValidate = () => {
@@ -175,7 +184,7 @@ export function ProfessorScannedCopyCorrectionScreen({
 
   if (!exam || !copy) {
     return (
-      <ScreenFrame compactHeader onBack={() => onNavigate('professor-review-copies')} title="Révision de la copie">
+      <ScreenFrame compactHeader onBack={() => onNavigate('professor-review-copies')} title="Modifier la copie">
         <View style={styles.emptyContainer}>
           <Icon name={Icons.info} color={colors.muted} size={32} />
           <Text style={styles.emptyText}>Aucune copie sélectionnée</Text>
@@ -184,41 +193,117 @@ export function ProfessorScannedCopyCorrectionScreen({
     );
   }
 
-  const studentInfo = copy;
-
-  const renderStudentCard = () => (
-    <View style={styles.studentCard}>
-      <View style={styles.studentCardHeader}>
-        <View style={styles.studentAvatar}>
-          <Text style={styles.studentAvatarText}>
-            {(studentInfo.studentName || '??').split(' ').map((s) => s[0]).join('').toUpperCase().slice(0, 2)}
-          </Text>
+  const renderCorrectionSummary = () => (
+    <View style={styles.summaryCard}>
+      <View style={styles.summaryHeader}>
+        <View style={styles.summaryTitleRow}>
+          <Icon name={Icons.trophy} color={colors.primary} size={18} />
+          <Text style={styles.summaryTitle}>Résumé de la correction</Text>
         </View>
-        <View style={styles.studentInfoBlock}>
-          <Text style={styles.studentName}>{studentInfo.studentName || 'Non identifié'}</Text>
-          <Text style={styles.studentMeta}>Matricule : {studentInfo.matricule || '—'}</Text>
-          <Text style={styles.studentMeta}>
-            {studentInfo.className || '—'} · {studentInfo.examName}
-          </Text>
+        {modifiedQuestions.size > 0 && <StatusPill label="Modifiée" tone="warning" />}
+      </View>
+      <View style={styles.summaryStatsRow}>
+        <View style={[styles.summaryStat, { backgroundColor: colors.successSoft }]}>
+          <Text style={[styles.summaryStatValue, { color: colors.success }]}>{summary.correctCount}</Text>
+          <Text style={styles.summaryStatLabel}>Correctes</Text>
         </View>
-        <View style={styles.scoreBadge}>
-          <Text style={styles.scoreBadgeValue}>{scoreText}</Text>
-          {modifiedQuestions.size > 0 ? (
-            <StatusPill label="Modifiée" tone="warning" />
-          ) : saveStatus === 'validated' ? (
-            <StatusPill label="Validée" tone="success" />
-          ) : (
-            <StatusPill label={reviewStatusLabel(copy.reviewStatus)} tone={reviewStatusTone(copy.reviewStatus)} />
-          )}
+        <View style={[styles.summaryStat, { backgroundColor: colors.dangerSoft }]}>
+          <Text style={[styles.summaryStatValue, { color: colors.danger }]}>{summary.wrongCount}</Text>
+          <Text style={styles.summaryStatLabel}>Fausse</Text>
+        </View>
+        <View style={[styles.summaryStat, { backgroundColor: colors.neutralSoft }]}>
+          <Text style={[styles.summaryStatValue, { color: colors.neutralText }]}>{summary.unansweredCount}</Text>
+          <Text style={styles.summaryStatLabel}>Vides</Text>
+        </View>
+        <View style={[styles.summaryStat, { backgroundColor: colors.primarySoft }]}>
+          <Text style={[styles.summaryStatValue, { color: colors.primary }]}>{scoreText}</Text>
+          <Text style={styles.summaryStatLabel}>Score</Text>
         </View>
       </View>
+      <View style={styles.summaryDetailRow}>
+        <View style={styles.summaryDetailItem}>
+          <Text style={styles.summaryDetailLabel}>Étudiant</Text>
+          <Text style={styles.summaryDetailValue}>{studentName || 'Non identifié'}</Text>
+        </View>
+        <View style={styles.summaryDetailItem}>
+          <Text style={styles.summaryDetailLabel}>Examen</Text>
+          <Text style={styles.summaryDetailValue}>{copy.examName}</Text>
+        </View>
+      </View>
+      <View style={styles.summaryDetailRow}>
+        <View style={styles.summaryDetailItem}>
+          <Text style={styles.summaryDetailLabel}>Questions</Text>
+          <Text style={styles.summaryDetailValue}>{summary.rows.length}</Text>
+        </View>
+        <View style={styles.summaryDetailItem}>
+          <Text style={styles.summaryDetailLabel}>Pourcentage</Text>
+          <Text style={[styles.summaryDetailValue, { color: summary.percentage >= 50 ? colors.success : colors.danger }]}>
+            {summary.percentage}%
+          </Text>
+        </View>
+      </View>
+      <View style={styles.summaryBarTrack}>
+        <View style={[styles.summaryBarFill, { width: `${Math.min(summary.percentage, 100)}%`, backgroundColor: summary.percentage >= 50 ? colors.success : colors.danger }]} />
+      </View>
+    </View>
+  );
+
+  const renderStudentInfoEditor = () => (
+    <View style={styles.studentInfoCard}>
+      <View style={styles.sectionTitleRow}>
+        <Icon name={Icons.profile} color={colors.primary} size={16} />
+        <Text style={styles.sectionTitle}>Informations de l'étudiant</Text>
+      </View>
+      <View style={styles.studentInfoGrid}>
+        <View style={styles.studentInfoField}>
+          <Text style={styles.fieldLabel}>Nom complet</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={studentName}
+            onChangeText={setStudentName}
+            placeholder="Nom de l'étudiant"
+            placeholderTextColor={colors.faint}
+            selectionColor={colors.primary}
+          />
+        </View>
+        <View style={styles.studentInfoField}>
+          <Text style={styles.fieldLabel}>Matricule</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={matricule}
+            onChangeText={setMatricule}
+            placeholder="Matricule"
+            placeholderTextColor={colors.faint}
+            selectionColor={colors.primary}
+          />
+        </View>
+        <View style={styles.studentInfoField}>
+          <Text style={styles.fieldLabel}>Classe</Text>
+          <TextInput
+            style={styles.fieldInput}
+            value={className}
+            onChangeText={setClassName}
+            placeholder="Classe"
+            placeholderTextColor={colors.faint}
+            selectionColor={colors.primary}
+          />
+        </View>
+      </View>
+      {hasStudentEdits && (
+        <View style={styles.studentInfoEditedBadge}>
+          <StatusPill label="Modifié" tone="warning" />
+        </View>
+      )}
     </View>
   );
 
   const renderImageSection = () => (
     <View style={styles.imageSection}>
       <View style={styles.imageSectionHeader}>
-        <Text style={styles.sectionLabel}>Feuille de réponses scannée</Text>
+        <View style={styles.sectionTitleRow}>
+          <Icon name={Icons.camera} color={colors.primary} size={16} />
+          <Text style={styles.sectionTitle}>Feuille scannée</Text>
+        </View>
         {Platform.OS !== 'ios' && (
           <View style={styles.zoomControls}>
             <Pressable
@@ -259,7 +344,7 @@ export function ProfessorScannedCopyCorrectionScreen({
             <View style={styles.questionOverlay}>
               {(() => {
                 const qIdx = selectedQuestion - 1;
-                const qTotal = questionBank.length || exam.questions;
+                const qTotal = summary.rows.length || exam.questions;
                 const cols = qTotal >= 100 ? 4 : qTotal >= 50 ? 3 : 2;
                 const perCol = Math.ceil(qTotal / cols);
                 const colIdx = Math.floor(qIdx / perCol);
@@ -288,75 +373,83 @@ export function ProfessorScannedCopyCorrectionScreen({
     </View>
   );
 
-  const renderAnswerList = () => (
-    <View style={styles.answerListSection}>
-      <Text style={styles.sectionLabel}>
-        Réponses · {summary.score}/{summary.max} ({Math.round((summary.score / Math.max(summary.max, 1)) * 100)}%)
-      </Text>
-      <ScrollView
-        ref={scrollRef}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.answerListScroll}
-      >
-        <View style={styles.answerGrid}>
-          {summary.rows.map((row) => {
-            const status = questionStatus(row.number);
-            const sc = statusColors(status);
-            const isSelected = selectedQuestion === row.number;
-            return (
-              <Pressable
-                key={row.number}
-                onPress={() => handleSelectQuestion(row.number)}
-                style={[
-                  styles.answerQuestionCard,
-                  isSelected && styles.answerQuestionCardSelected,
-                  { borderLeftColor: sc.border },
-                ]}
-              >
-                <View style={styles.answerQuestionHeader}>
-                  <View style={[styles.answerQuestionDot, { backgroundColor: sc.bg, borderColor: sc.border }]}>
-                    <Text style={[styles.answerQuestionNumber, { color: sc.text }]}>{row.number}</Text>
-                  </View>
-                  {modifiedQuestions.has(row.number) && <StatusPill label="Modifiée" tone="warning" />}
-                  {!modifiedQuestions.has(row.number) && row.status === 'correct' && <StatusPill label="Correcte" tone="success" />}
-                  {!modifiedQuestions.has(row.number) && row.status === 'wrong' && <StatusPill label="Fausse" tone="danger" />}
-                  {!modifiedQuestions.has(row.number) && row.status === 'unanswered' && <StatusPill label="Vide" tone="neutral" />}
+  const renderAnswerSection = () => (
+    <View style={styles.answerSection}>
+      <View style={styles.answerSectionHeader}>
+        <View style={styles.sectionTitleRow}>
+          <Icon name={Icons.check} color={colors.primary} size={16} />
+          <Text style={styles.sectionTitle}>Réponses détectées par l'IA</Text>
+        </View>
+        <Text style={styles.answerListCount}>{summary.rows.length} questions</Text>
+      </View>
+      <View style={styles.answerGrid}>
+        {summary.rows.map((row) => {
+          const status = questionStatus(row.number);
+          const sc = statusColors(status);
+          const isSelected = selectedQuestion === row.number;
+          return (
+            <Pressable
+              key={row.number}
+              onPress={() => handleSelectQuestion(row.number)}
+              style={[
+                styles.answerQuestionCard,
+                isSelected && styles.answerQuestionCardSelected,
+                { borderLeftColor: sc.border },
+              ]}
+            >
+              <View style={styles.answerQuestionHeader}>
+                <View style={[styles.answerQuestionDot, { backgroundColor: sc.bg, borderColor: sc.border }]}>
+                  <Text style={[styles.answerQuestionNumber, { color: sc.text }]}>{row.number}</Text>
                 </View>
-                <View style={styles.answerBubbleRow}>
-                  {answerSheetChoices.map((choice) => {
-                    const answers = parseAnswerToken(localAnswers[row.number - 1]);
-                    const isActive = answers.includes(choice);
-                    const bc = isActive ? sc : statusColors('unanswered');
-                    return (
-                      <Pressable
-                        key={choice}
-                        onPress={() => handleAnswerPress(row.number, choice)}
-                        style={({ pressed }) => [
-                          styles.answerBubble,
-                          {
-                            backgroundColor: isActive ? bc.text : colors.card,
-                            borderColor: isActive ? bc.text : colors.border,
-                          },
-                          pressed && styles.pressed,
-                        ]}
-                      >
-                        <Text style={[styles.answerBubbleText, { color: isActive ? colors.card : colors.muted }]}>
-                          {choice}
-                        </Text>
-                      </Pressable>
-                    );
-                  })}
-                </View>
-                <View style={styles.answerQuestionFooter}>
-                  <Text style={styles.answerPointsText}>
-                    {row.correct !== '—' ? `Corrigé : ${row.correct}` : 'Non défini'}
+                {modifiedQuestions.has(row.number) && <StatusPill label="Modifiée" tone="warning" />}
+                {!modifiedQuestions.has(row.number) && row.status === 'correct' && <StatusPill label="Correcte" tone="success" />}
+                {!modifiedQuestions.has(row.number) && row.status === 'wrong' && <StatusPill label="Fausse" tone="danger" />}
+                {!modifiedQuestions.has(row.number) && row.status === 'unanswered' && <StatusPill label="Vide" tone="neutral" />}
+                <View style={styles.answerPointsBadge}>
+                  <Text style={[styles.answerPointsText, { color: row.pointsEarned > 0 ? colors.success : colors.muted }]}>
+                    {formatQuestionPoints(row.points)}
                   </Text>
                 </View>
-              </Pressable>
-            );
-          })}
-        </View>
-      </ScrollView>
+              </View>
+              <View style={styles.answerBubbleRow}>
+                {answerSheetChoices.map((choice) => {
+                  const answers = parseAnswerToken(localAnswers[row.number - 1]);
+                  const isActive = answers.includes(choice);
+                  const isCorrectChoice = row.correct.split('+').includes(choice);
+                  const bc = isActive ? sc : statusColors('unanswered');
+                  return (
+                    <Pressable
+                      key={choice}
+                      onPress={() => handleAnswerPress(row.number, choice)}
+                      style={({ pressed }) => [
+                        styles.answerBubble,
+                        {
+                          backgroundColor: isActive ? bc.text : colors.card,
+                          borderColor: isActive ? bc.text : isCorrectChoice ? colors.success : colors.border,
+                        },
+                        isCorrectChoice && !isActive && styles.answerBubbleCorrectHint,
+                        pressed && styles.pressed,
+                      ]}
+                    >
+                      <Text style={[styles.answerBubbleText, { color: isActive ? colors.card : colors.muted }]}>
+                        {choice}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+              <View style={styles.answerQuestionFooter}>
+                <Text style={styles.answerKeyLabel}>
+                  Clé : {row.correct}
+                </Text>
+                <Text style={[styles.answerEarnedLabel, { color: row.pointsEarned > 0 ? colors.success : colors.danger }]}>
+                  {row.pointsEarned > 0 ? `+${formatScoreValue(row.pointsEarned)}` : '0'} / {formatScoreValue(row.points)}
+                </Text>
+              </View>
+            </Pressable>
+          );
+        })}
+      </View>
     </View>
   );
 
@@ -365,27 +458,37 @@ export function ProfessorScannedCopyCorrectionScreen({
       <TextButton icon={Icons.close} onPress={handleCancel} tone="neutral">
         Annuler
       </TextButton>
-      <PrimaryButton icon={Icons.save} onPress={handleSave} tone="primary" variant="outline" style={styles.actionButton}>
-        Sauvegarder
-      </PrimaryButton>
-      <PrimaryButton icon={Icons.check} onPress={handleValidate} tone="success" style={styles.actionButton}>
-        Valider la correction
-      </PrimaryButton>
+      <View style={styles.bottomActionsRight}>
+        <PrimaryButton
+          icon={Icons.save}
+          onPress={handleSave}
+          tone="primary"
+          variant="outline"
+          disabled={!hasAnyEdits}
+          style={styles.actionButton}
+        >
+          Sauvegarder
+        </PrimaryButton>
+        <PrimaryButton icon={Icons.check} onPress={handleValidate} tone="success" style={styles.actionButton}>
+          Enregistrer
+        </PrimaryButton>
+      </View>
     </View>
   );
 
   return (
-    <ScreenFrame compactHeader onBack={handleCancel} title="Révision de la copie" scrollable={false}>
+    <ScreenFrame compactHeader onBack={handleCancel} title="Modifier la copie" scrollable={false}>
       <View style={styles.page}>
-        {renderStudentCard()}
-        <View style={[styles.mainLayout, isLargeScreen && styles.mainLayoutRow]}>
-          <View style={[styles.mainLayoutLeft, isLargeScreen && { flex: 1 }]}>
-            {renderImageSection()}
-          </View>
-          <View style={[styles.mainLayoutRight, isLargeScreen && { flex: 1 }]}>
-            {renderAnswerList()}
-          </View>
-        </View>
+        <ScrollView
+          style={styles.mainScroll}
+          contentContainerStyle={styles.mainScrollContent}
+          showsVerticalScrollIndicator={false}
+        >
+          {renderCorrectionSummary()}
+          {renderStudentInfoEditor()}
+          {renderImageSection()}
+          {renderAnswerSection()}
+        </ScrollView>
         {renderBottomActions()}
       </View>
     </ScreenFrame>
@@ -395,8 +498,6 @@ export function ProfessorScannedCopyCorrectionScreen({
 const styles = StyleSheet.create({
   page: {
     flex: 1,
-    padding: spacing.md,
-    gap: spacing.sm,
   },
   emptyContainer: {
     flex: 1,
@@ -410,7 +511,16 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  studentCard: {
+  mainScroll: {
+    flex: 1,
+  },
+  mainScrollContent: {
+    padding: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: 110,
+    gap: spacing.sm,
+  },
+  summaryCard: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.md,
@@ -419,65 +529,118 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
-  },
-  studentCardHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
     gap: spacing.sm,
   },
-  studentAvatar: {
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    backgroundColor: colors.primarySoft,
+  summaryHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    justifyContent: 'center',
   },
-  studentAvatarText: {
-    color: colors.primary,
-    fontSize: 16,
+  summaryTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  summaryTitle: {
+    color: colors.ink,
+    fontSize: 15,
     fontWeight: '800',
   },
-  studentInfoBlock: {
+  summaryStatsRow: {
+    flexDirection: 'row',
+    gap: spacing.xs,
+  },
+  summaryStat: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: radius.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.xs,
+    gap: 2,
+  },
+  summaryStatValue: {
+    fontSize: 20,
+    fontWeight: '800',
+  },
+  summaryStatLabel: {
+    color: colors.muted,
+    fontSize: 10,
+    fontWeight: '600',
+  },
+  summaryDetailRow: {
+    flexDirection: 'row',
+    gap: spacing.md,
+  },
+  summaryDetailItem: {
     flex: 1,
     gap: 2,
   },
-  studentName: {
+  summaryDetailLabel: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: '600',
+  },
+  summaryDetailValue: {
     color: colors.ink,
-    fontSize: 16,
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  summaryBarTrack: {
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: colors.neutralSoft,
+    overflow: 'hidden',
+  },
+  summaryBarFill: {
+    height: '100%',
+    borderRadius: 3,
+  },
+  studentInfoCard: {
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    padding: spacing.md,
+    shadowColor: '#000',
+    shadowOpacity: 0.06,
+    shadowRadius: 12,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 2,
+    gap: spacing.sm,
+  },
+  sectionTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.xs,
+  },
+  sectionTitle: {
+    color: colors.ink,
+    fontSize: 14,
     fontWeight: '800',
   },
-  studentMeta: {
-    color: colors.muted,
-    fontSize: 12,
+  studentInfoGrid: {
+    gap: spacing.sm,
   },
-  scoreBadge: {
-    alignItems: 'flex-end',
+  studentInfoField: {
     gap: spacing.xxs,
   },
-  scoreBadgeValue: {
-    color: colors.primary,
-    fontSize: 18,
-    fontWeight: '800',
-  },
-  mainLayout: {
-    flex: 1,
-    gap: spacing.md,
-  },
-  mainLayoutRow: {
-    flexDirection: 'row',
-  },
-  mainLayoutLeft: {
-    maxHeight: 320,
-  },
-  mainLayoutRight: {
-    flex: 1,
-    minHeight: 0,
-  },
-  sectionLabel: {
-    color: colors.ink,
-    fontSize: 13,
+  fieldLabel: {
+    color: colors.muted,
+    fontSize: 12,
     fontWeight: '700',
+  },
+  fieldInput: {
+    minHeight: 42,
+    borderWidth: 1,
+    borderColor: '#D7D9E0',
+    borderRadius: radius.xs,
+    paddingHorizontal: spacing.md,
+    color: colors.ink,
+    fontSize: 15,
+    backgroundColor: colors.screen,
+    fontWeight: '500',
+  },
+  studentInfoEditedBadge: {
+    alignItems: 'flex-start',
   },
   imageSection: {
     backgroundColor: colors.card,
@@ -565,8 +728,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: spacing.xs,
   },
-  answerListSection: {
-    flex: 1,
+  answerSection: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,
     padding: spacing.sm,
@@ -575,10 +737,18 @@ const styles = StyleSheet.create({
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
     elevation: 2,
-    minHeight: 0,
+    gap: spacing.xs,
   },
-  answerListScroll: {
-    paddingBottom: spacing.sm,
+  answerSectionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  answerListCount: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: '600',
+    marginLeft: 'auto',
   },
   answerGrid: {
     gap: spacing.xs,
@@ -612,6 +782,13 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '800',
   },
+  answerPointsBadge: {
+    marginLeft: 'auto',
+  },
+  answerPointsText: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   answerBubbleRow: {
     flexDirection: 'row',
     gap: spacing.xs,
@@ -624,26 +801,40 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
   },
+  answerBubbleCorrectHint: {
+    borderWidth: 2,
+    borderStyle: 'dashed',
+  },
   answerBubbleText: {
     fontSize: 13,
     fontWeight: '800',
   },
   answerQuestionFooter: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
+    alignItems: 'center',
   },
-  answerPointsText: {
+  answerKeyLabel: {
     color: colors.faint,
     fontSize: 11,
   },
+  answerEarnedLabel: {
+    fontSize: 11,
+    fontWeight: '700',
+  },
   bottomActions: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    gap: spacing.sm,
-    paddingTop: spacing.sm,
+    padding: spacing.md,
+    paddingBottom: spacing.sm,
     borderTopWidth: 1,
     borderTopColor: colors.border,
+    backgroundColor: colors.card,
+  },
+  bottomActionsRight: {
+    flexDirection: 'row',
+    gap: spacing.sm,
   },
   actionButton: {
     flex: 0,
