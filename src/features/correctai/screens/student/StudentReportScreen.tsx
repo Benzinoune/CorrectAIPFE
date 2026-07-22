@@ -4,7 +4,7 @@ import * as Print from 'expo-print';
 
 import { Card, Icons, PrimaryButton, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
 import { studentTabs } from '@/features/correctai/data/mock-data';
-import { StudentScreenProps, styles, tabPress, getStudentScannedCopy, getStudentVisibleExams } from './shared';
+import { StudentScreenProps, styles, tabPress, getStudentScannedCopy, getStudentVisibleExams, answersMatchMulti } from './shared';
 
 export function StudentReportScreen({ activeTab, onNavigate, studentsData, establishmentsData, selectedStudent, examsData }: StudentScreenProps) {
   const [downloading, setDownloading] = useState(false);
@@ -41,7 +41,7 @@ export function StudentReportScreen({ activeTab, onNavigate, studentsData, estab
         exam.questionBank.forEach(q => {
           dynamicTotalPoints += q.points;
           const studentAns = copy.omrResult?.answers?.find(a => a.question === q.number)?.answer;
-          if (studentAns && q.correctAnswers.includes(studentAns)) {
+          if (answersMatchMulti(studentAns, q.correctAnswers)) {
             dynamicPoints += q.points;
           }
         });

@@ -2,7 +2,7 @@ import { Pressable, Text, View } from 'react-native';
 
 import { Card, Icons, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
 import { studentTabs } from '@/features/correctai/data/mock-data';
-import { StudentScreenProps, styles, tabPress, getStudentVisibleExams, getStudentScannedCopy } from './shared';
+import { StudentScreenProps, styles, tabPress, getStudentVisibleExams, getStudentScannedCopy, computeExamScore } from './shared';
 
 export function StudentExamsScreen({ activeTab, onNavigate, studentsData, selectedStudent, examsData, onSelectExam }: StudentScreenProps) {
   const student = selectedStudent ?? studentsData[0];
@@ -18,9 +18,10 @@ export function StudentExamsScreen({ activeTab, onNavigate, studentsData, select
           const copy = getStudentScannedCopy(exam, student);
           const hasRealScore = copy?.calculatedScore && copy.calculatedScore !== '--' && copy.calculatedScore.includes('/');
           const isCorrected = copy && (copy.reviewStatus === 'CORRECTED' || hasRealScore);
-          const statusLabel = isCorrected 
-            ? (copy!.calculatedScore ?? 'Corrigé')
-            : copy 
+          const result = isCorrected ? computeExamScore(exam, student) : null;
+          const statusLabel = result
+            ? result.scoreStr
+            : copy
               ? 'En attente'
               : exam.status ?? 'Disponible';
           const statusTone = isCorrected ? 'success' : copy ? 'warning' : 'info';

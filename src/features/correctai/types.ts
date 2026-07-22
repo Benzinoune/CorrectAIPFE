@@ -63,6 +63,7 @@ export type AppScreen =
   | 'admin-home'
   | 'admin-professors'
   | 'admin-professor-detail'
+  | 'admin-professor-edit'
   | 'admin-new-professor'
   | 'admin-account'
   | 'professor-home'

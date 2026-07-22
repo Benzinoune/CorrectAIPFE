@@ -1,7 +1,7 @@
 import { Text, View } from 'react-native';
 
 import { Card, Icon, Icons, ScreenFrame, SectionTitle, StatusPill } from '@/features/correctai/components/ui';
-import { StudentScreenProps, styles, getStudentScannedCopy } from './shared';
+import { StudentScreenProps, styles, getStudentScannedCopy, answersMatchMulti, formatCorrectAnswers, computeExamScore } from './shared';
 
 export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStudent, studentsData }: StudentScreenProps) {
   const student = selectedStudent ?? studentsData[0];
@@ -47,27 +47,21 @@ export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStud
 
   let correctCount = 0;
   let incorrectCount = 0;
-  let dynamicPoints = 0;
-  let dynamicTotalPoints = 0;
   const totalQuestions = selectedExam.questions || selectedExam.questionBank?.length || 0;
 
+  const computed = computeExamScore(selectedExam, student);
+  const points = computed?.score ?? 0;
+  const totalPoints = computed?.max ?? 0;
+  const percentage = totalPoints > 0 ? (points / totalPoints) * 100 : 0;
+
   selectedExam.questionBank?.forEach(q => {
-    dynamicTotalPoints += q.points;
     const studentAns = copy.omrResult?.answers?.find(a => a.question === q.number)?.answer;
-    if (studentAns && q.correctAnswers.includes(studentAns)) {
+    if (answersMatchMulti(studentAns, q.correctAnswers)) {
       correctCount++;
-      dynamicPoints += q.points;
     } else {
       incorrectCount++;
     }
   });
-
-  // Use dynamic points if questionBank is available, otherwise fallback to calculatedScore string parsing
-  const scoreStr = copy.calculatedScore || '0/0';
-  const scoreParts = scoreStr.split('/');
-  const points = selectedExam.questionBank ? dynamicPoints : parseFloat(scoreParts[0] || '0');
-  const totalPoints = selectedExam.questionBank ? dynamicTotalPoints : parseFloat(scoreParts[1] || `${selectedExam.questions}`);
-  const percentage = totalPoints > 0 ? (points / totalPoints) * 100 : 0;
 
   let tone: 'success' | 'warning' | 'danger' = 'success';
   let label = 'Bien';
@@ -113,7 +107,7 @@ export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStud
           // Find student answer
           const studentAns = copy.omrResult?.answers?.find(a => a.question === q.number)?.answer;
           // Determine if correct based on question bank
-          const correct = !!studentAns && q.correctAnswers.includes(studentAns);
+          const correct = answersMatchMulti(studentAns, q.correctAnswers);
           const pointsEarned = correct ? q.points : 0;
           
           return (
@@ -157,7 +151,7 @@ export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStud
                 <View style={{ alignItems: 'center' }}>
                   <Text style={{ fontSize: 12, color: '#6B7280', marginBottom: 4 }}>Bonne réponse</Text>
                   <Text style={{ fontSize: 18, fontWeight: '700', color: '#10B981' }}>
-                    {q.correctAnswers.join(' ou ')}
+                    {formatCorrectAnswers(q.correctAnswers)}
                   </Text>
                 </View>
               </View>

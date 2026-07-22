@@ -3,6 +3,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { InstitutionUnavailableScreen } from '@/features/correctai/components/InstitutionUnavailableScreen';
 import {
   AdminHomeScreen,
+  AdminEditProfessorScreen,
   AdminNewProfessorScreen,
   AdminProfessorDetailScreen,
   AdminProfessorsScreen,
@@ -1392,6 +1393,15 @@ export function CorrectAiApp() {
           selectedProfessor={selectedProfessorForRender}
         />
       );
+    case 'admin-professor-edit':
+      return (
+        <AdminEditProfessorScreen
+          activeTab={activeTab}
+          onNavigate={navigate}
+          onUpdateProfessor={updateProfessor}
+          selectedProfessor={selectedProfessorForRender}
+        />
+      );
     case 'admin-new-professor':
       return (
         <AdminNewProfessorScreen
@@ -1464,7 +1474,7 @@ export function CorrectAiApp() {
           classesData={professorClasses}
           onCreateStudent={createStudent}
           onNavigate={navigate}
-          selectedClass={null}
+          selectedClass={selectedClassForRender}
           studentsData={professorStudents}
           previousScreen={previousScreenRef.current}
         />

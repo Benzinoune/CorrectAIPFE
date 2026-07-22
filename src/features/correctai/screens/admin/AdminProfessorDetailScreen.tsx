@@ -45,7 +45,7 @@ export function AdminProfessorDetailScreen({ onNavigate, onUpdateProfessor, onDe
   };
 
   return (
-    <ScreenFrame compactHeader onBack={() => onNavigate('admin-professors')} title="Details Prof">
+    <ScreenFrame compactHeader onBack={() => onNavigate('admin-professors')} rightAction={{ icon: Icons.edit, onPress: () => onNavigate('admin-professor-edit') }} title="Details Prof">
       <Card style={styles.profileCard}>
         <View style={styles.profileHeader}>
           <Avatar initials={professor.initials} size={58} />

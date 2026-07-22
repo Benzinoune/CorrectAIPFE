@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import { correctAiTheme } from '@/features/correctai/theme';
-import type { AppScreen, Establishment, Exam, NavItem, Student } from '@/features/correctai/types';
+import type { AppScreen, Establishment, Exam, ExamQuestion, NavItem, ScannedCopy, Student } from '@/features/correctai/types';
 
 const { colors, spacing, radius } = correctAiTheme;
 
@@ -84,6 +84,80 @@ export function getStudentScannedCopy(exam: Exam | null | undefined, student: St
 
   console.log('[Student] getStudentScannedCopy: no match found for student');
   return null;
+}
+
+function parseAnswerToken(value: string | undefined): string[] {
+  if (!value) return [];
+  return value.split('+').map((p) => p.trim()).filter(Boolean);
+}
+
+export function answersMatchMulti(studentAns: string | null | undefined, correctAnswers: string[]): boolean {
+  if (!studentAns || correctAnswers.length === 0) return false;
+  const sortedStudent = parseAnswerToken(studentAns).sort();
+  const sortedCorrect = [...correctAnswers].sort();
+  return (
+    sortedStudent.length > 0 &&
+    sortedCorrect.length > 0 &&
+    sortedStudent.length === sortedCorrect.length &&
+    sortedStudent.every((a, idx) => a === sortedCorrect[idx])
+  );
+}
+
+export function formatCorrectAnswers(correctAnswers: string[]): string {
+  if (correctAnswers.length === 0) return '—';
+  return [...correctAnswers].sort().join('+');
+}
+
+export function computeExamScore(
+  exam: Exam | null | undefined,
+  student: Student | null | undefined,
+): { score: number; max: number; scoreStr: string } | null {
+  const copy = getStudentScannedCopy(exam, student);
+  if (!copy || !exam) return null;
+
+  const bank = exam.questionBank;
+  if (bank && bank.length > 0) {
+    let earned = 0;
+    let possible = 0;
+    bank.forEach((q) => {
+      possible += q.points;
+      const studentAns = copy.omrResult?.answers?.find((a) => a.question === q.number)?.answer;
+      if (answersMatchMulti(studentAns, q.correctAnswers)) {
+        earned += q.points;
+      }
+    });
+    if (possible > 0) {
+      return { score: earned, max: possible, scoreStr: `${earned}/${possible}` };
+    }
+  }
+
+  const raw = copy.calculatedScore;
+  if (raw && raw !== '--' && raw.includes('/')) {
+    const [num, den] = raw.split('/');
+    return { score: parseFloat(num) || 0, max: parseFloat(den) || 0, scoreStr: raw };
+  }
+
+  return null;
+}
+
+export function computeStudentAverage(
+  student: Student | null | undefined,
+  examsData: Exam[] | undefined,
+): string {
+  if (!student || !examsData) return 'N/A';
+  const visible = getStudentVisibleExams(student, examsData);
+  let totalEarned = 0;
+  let totalMax = 0;
+  for (const exam of visible) {
+    const result = computeExamScore(exam, student);
+    if (result && result.max > 0) {
+      totalEarned += result.score;
+      totalMax += result.max;
+    }
+  }
+  if (totalMax === 0) return 'N/A';
+  const avg = (totalEarned / totalMax) * 20;
+  return Number.isInteger(avg) ? `${avg}/20` : `${avg.toFixed(1)}/20`;
 }
 
 export { tabPress } from '@/features/correctai/utils';
