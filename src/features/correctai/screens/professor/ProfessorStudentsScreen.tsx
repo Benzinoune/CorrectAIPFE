@@ -3,7 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Avatar, Card, FloatingButton, Icon, Icons, ScreenFrame, SearchRow } from '@/features/correctai/components/ui';
-import { classes, professorTabs, students } from '@/features/correctai/data/mock-data';
+import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { ClassRoom, Student } from '@/features/correctai/types';
 import { normalizeSearch, ProfessorScreenProps, studentClassLabels, studentDisplayName, tabPress } from './shared';
@@ -21,8 +21,8 @@ export function ProfessorStudentsScreen({
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
-  const studentList = studentsData ?? students;
-  const classList = classesData ?? classes;
+  const studentList = studentsData ?? [];
+  const classList = classesData ?? [];
 
   const visibleStudents = useMemo(() => {
     const normalizedQuery = normalizeSearch(query.trim());

@@ -15,7 +15,8 @@ import { captureRef } from 'react-native-view-shot';
 import { File } from 'expo-file-system';
 
 import { Card, Icon, Icons, ScreenFrame } from '@/features/correctai/components/ui';
-import { classes, exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { Exam } from '@/features/correctai/types';
 import {
@@ -375,7 +376,7 @@ function buildPdfImageHtml(dataUri: string) {
 }
 
 export function ProfessorAnswerSheetScreen({ examsData, classesData, onNavigate, selectedExam }: ProfessorScreenProps) {
-  const examList = examsData ?? exams;
+  const examList = examsData ?? [];
   const exam = selectedExam ?? examList[0] ?? null;
   const [pdfDialogVisible, setPdfDialogVisible] = useState(false);
   const answerSheetRef = useRef<View>(null);
@@ -405,7 +406,7 @@ export function ProfessorAnswerSheetScreen({ examsData, classesData, onNavigate,
     };
   });
   const sheetHeight = 476;
-  const classList = classesData ?? classes;
+  const classList = classesData ?? [];
   const classValue = exam.classIds?.length ? classNamesFromIds(exam.classIds, classList).join(', ') : exam.className;
   const dateValue = formatAnswerSheetDate(exam.date);
   const screenTitle = `Feuille ${questionCount} Questions`;

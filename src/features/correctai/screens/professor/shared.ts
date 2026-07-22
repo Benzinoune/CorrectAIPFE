@@ -47,7 +47,8 @@ export type ProfessorScreenProps = {
   onUpdateExam?: (exam: Exam) => void;
   onDeleteExam?: (examId: string) => void;
   onUpdateProfessor?: (professor: Professor) => void;
-  onLogin?: (role: UserRole, establishmentId?: string) => void;
+  onLogin?: (email: string, password: string) => { success: boolean; error?: string };
+  onLogout?: () => void;
   selectedProfessor?: Professor | null;
   professorsData?: Professor[];
   classesData?: ClassRoom[];
@@ -56,6 +57,7 @@ export type ProfessorScreenProps = {
 };
 
 import { normalizeSearch, tabPress } from '@/features/correctai/utils';
+import { isValidEmail } from '@/features/correctai/utils/validation';
 export { normalizeSearch, tabPress };
 
 export function examTimestamp(value: string) {
@@ -313,8 +315,6 @@ export type StudentFormValues = {
 
 export type StudentFormErrors = Partial<Record<keyof StudentFormValues, string>>;
 
-export const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
 export function validateStudentForm(
   values: StudentFormValues,
   options?: { requirePassword?: boolean; existingStudents?: { matricule: string; email: string; id?: string }[]; currentId?: string },
@@ -338,7 +338,7 @@ export function validateStudentForm(
 
   if (!values.email.trim()) {
     errors.email = 'L\'email est requis.';
-  } else if (!emailPattern.test(values.email.trim().toLowerCase())) {
+  } else if (!isValidEmail(values.email.trim().toLowerCase())) {
     errors.email = 'Entrez une adresse email valide.';
   } else if (existingStudents.some((s) => s.email.toLowerCase() === values.email.trim().toLowerCase() && s.id !== currentId)) {
     errors.email = 'Cet email existe déjà.';

@@ -1,11 +1,11 @@
 import { useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 
-import { Card, Field, Icons, InfoRow, PrimaryButton, ScreenFrame, SectionTitle } from '@/features/correctai/components/ui';
+import { Card, Icons, InfoRow, PrimaryButton, ScreenFrame, SectionTitle, SecureField } from '@/features/correctai/components/ui';
 import { studentTabs } from '@/features/correctai/data/mock-data';
 import { StudentScreenProps, styles, tabPress } from './shared';
 
-export function StudentProfileScreen({ activeTab, onNavigate, studentsData, selectedStudent, onUpdateStudent, onLogout }: StudentScreenProps) {
+export function StudentProfileScreen({ activeTab, onNavigate, studentsData, establishmentsData, selectedStudent, onUpdateStudent, onLogout }: StudentScreenProps) {
   const student = selectedStudent ?? studentsData[0];
   const [oldPassword, setOldPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
@@ -27,7 +27,7 @@ export function StudentProfileScreen({ activeTab, onNavigate, studentsData, sele
       setPasswordError('Les mots de passe ne correspondent pas.');
       return;
     }
-    if (oldPassword !== 'Student@123' && oldPassword !== 'password123' && oldPassword !== student.password) {
+    if (oldPassword !== student.password) {
       setPasswordError('Ancien mot de passe incorrect.');
       return;
     }
@@ -39,6 +39,7 @@ export function StudentProfileScreen({ activeTab, onNavigate, studentsData, sele
   };
   const initials = student.initials ?? (student.firstName?.[0] ?? '') + (student.lastName?.[0] ?? '');
   const fullName = student.firstName && student.lastName ? `${student.firstName} ${student.lastName}` : student.initials ?? 'Etudiant';
+  const establishmentName = establishmentsData?.find((e) => e.id === student.establishmentId)?.name ?? (student.establishmentId || 'Non assigné');
 
   const handleLogout = () => {
     Alert.alert(
@@ -76,8 +77,8 @@ export function StudentProfileScreen({ activeTab, onNavigate, studentsData, sele
       </View>
 
       <SectionTitle>Informations Personnelles</SectionTitle>
-      <Card icon={Icons.person} style={styles.settingsCard} title="Details Personnels">
-        <InfoRow icon={Icons.user} label="Nom complet" value={fullName} />
+      <Card icon={Icons.profile} style={styles.settingsCard} title="Details Personnels">
+        <InfoRow icon={Icons.profile} label="Nom complet" value={fullName} />
         <InfoRow icon={Icons.mail} label="Email" value={student.email || 'Non renseigné'} />
         <InfoRow icon={Icons.key} label="Mot de passe" value="••••••••" />
       </Card>
@@ -85,22 +86,22 @@ export function StudentProfileScreen({ activeTab, onNavigate, studentsData, sele
       <SectionTitle>Informations Académiques</SectionTitle>
       <Card icon={Icons.school} style={styles.settingsCard} title="Details Académiques">
         <InfoRow icon={Icons.doc} label="Matricule" value={student.matricule || 'Non renseigné'} />
-        <InfoRow icon={Icons.school} label="Établissement" value={student.establishmentId || 'Non assigné'} />
-        <InfoRow icon={Icons.layers} label="Classes" value={student.classes?.length > 0 ? student.classes.join(', ') : 'Aucune classe'} />
+        <InfoRow icon={Icons.school} label="Établissement" value={establishmentName} />
+        <InfoRow icon={Icons.school} label="Classes" value={student.classes?.length > 0 ? student.classes.join(', ') : 'Aucune classe'} />
       </Card>
 
       <SectionTitle>Informations du Compte</SectionTitle>
       <Card icon={Icons.gear} style={styles.settingsCard} title="Details du Compte">
         <InfoRow icon={Icons.shield} label="ID CorrectAI" value={student.correctAiId || 'Non renseigné'} />
-        <InfoRow icon={Icons.link} label="Ref Externe" value={student.externalRef || 'Non renseigné'} />
+        <InfoRow icon={Icons.doc} label="Ref Externe" value={student.externalRef || 'Non renseigné'} />
         <InfoRow icon={Icons.notifications} label="Notifications" value="Activees" />
         <InfoRow icon={Icons.book} label="Langue" value="Francais" />
       </Card>
       
       <SectionTitle>Changer de mot de passe</SectionTitle>
-      <Field placeholder="Ancien mot de passe" onChangeText={setOldPassword} secureTextEntry value={oldPassword} />
-      <Field placeholder="Nouveau" onChangeText={setNewPassword} secureTextEntry value={newPassword} />
-      <Field placeholder="Confirmer" onChangeText={setConfirmPassword} secureTextEntry value={confirmPassword} />
+      <SecureField placeholder="Ancien mot de passe" onChangeText={setOldPassword} value={oldPassword} />
+      <SecureField placeholder="Nouveau" onChangeText={setNewPassword} value={newPassword} />
+      <SecureField placeholder="Confirmer" onChangeText={setConfirmPassword} value={confirmPassword} />
       {passwordError ? <Text style={styles.passwordError}>{passwordError}</Text> : null}
       <View style={{ marginTop: 8 }}>
         <PrimaryButton icon={Icons.save} onPress={handleUpdatePassword}>

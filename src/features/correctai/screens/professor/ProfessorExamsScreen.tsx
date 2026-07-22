@@ -3,7 +3,7 @@ import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, ExamRow, FilterChips, FloatingButton, Icon, Icons, ScreenFrame, SearchRow } from '@/features/correctai/components/ui';
-import { exams, professorTabs } from '@/features/correctai/data/mock-data';
+import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
 import { normalizeSearch, ProfessorScreenProps, scannedCopiesCount, sortExamsByDate, tabPress } from './shared';
 
@@ -18,7 +18,7 @@ export function ProfessorExamsScreen({
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [sortAscending, setSortAscending] = useState(false);
-  const examList = examsData ?? exams;
+  const examList = examsData ?? [];
 
   const visibleExams = useMemo(() => {
     const normalizedQuery = normalizeSearch(query.trim());

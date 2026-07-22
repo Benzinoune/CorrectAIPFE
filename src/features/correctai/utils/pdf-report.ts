@@ -319,7 +319,7 @@ export async function generateCopiesReportPDF(exam: Exam, copies: ScannedCopy[])
   `;
 
   for (const copy of copies) {
-    const base64 = await getBase64Image(copy.imageUri);
+    const base64 = copy.imageUri ? await getBase64Image(copy.imageUri) : null;
     htmlContent += generateCopyHtml(copy, exam, base64);
   }
 

@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame } from '@/features/correctai/components/ui';
+import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { isValidEmail, normalizeEmail, EMAIL_VALIDATION_MESSAGE } from '@/features/correctai/utils/validation';
 import { SuperAdminScreenProps, styles } from './shared';
 
 export function SuperAdminNewEstablishmentScreen({ onNavigate, onCreateEstablishment }: SuperAdminScreenProps) {
@@ -25,6 +26,7 @@ export function SuperAdminNewEstablishmentScreen({ onNavigate, onCreateEstablish
       setErrors(missing);
       return;
     }
+    if (!isValidEmail(normalizeEmail(email))) { setErrors([EMAIL_VALIDATION_MESSAGE]); return; }
     setErrors([]);
     onCreateEstablishment?.({
       name: name.trim(),
@@ -50,7 +52,7 @@ export function SuperAdminNewEstablishmentScreen({ onNavigate, onCreateEstablish
           </View>
         </View>
         <Field autoCapitalize="none" keyboardType="email-address" label="Email de l'admin *" onChangeText={setEmail} value={email} />
-        <Field autoCapitalize="none" label="Mot de passe provisoire *" onChangeText={setPassword} secureTextEntry value={password} />
+        <SecureField autoCapitalize="none" label="Mot de passe provisoire *" onChangeText={setPassword} value={password} />
         <Text style={styles.formHint}>L'administrateur pourra changer son mot de passe par la suite.</Text>
         {errors.length > 0 && <Text style={styles.formError}>Veuillez remplir les champs: {errors.join(', ')}.</Text>}
         <FormActions onCancel={() => onNavigate('super-admin-establishments')} submitLabel="Creer l'etablissement" onSubmit={submit} />

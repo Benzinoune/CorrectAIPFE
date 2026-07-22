@@ -36,7 +36,7 @@ export function SuperAdminEstablishmentSettingsScreen({
       name: name.trim() || establishment.name,
       city: city.trim() || establishment.city,
       adminName: adminName.trim() || establishment.adminName,
-      adminEmail: adminEmail.trim() || establishment.adminEmail,
+      adminEmail: adminEmail.trim().toLowerCase() || establishment.adminEmail,
       status,
     });
     onNavigate('super-admin-establishment-detail');

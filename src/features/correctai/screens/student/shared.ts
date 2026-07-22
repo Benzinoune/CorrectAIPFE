@@ -1,7 +1,7 @@
 import { StyleSheet } from 'react-native';
 
 import { correctAiTheme } from '@/features/correctai/theme';
-import type { AppScreen, Exam, NavItem, Student } from '@/features/correctai/types';
+import type { AppScreen, Establishment, Exam, NavItem, Student } from '@/features/correctai/types';
 
 const { colors, spacing, radius } = correctAiTheme;
 
@@ -9,6 +9,7 @@ export type StudentScreenProps = {
   activeTab: NavItem['id'];
   onNavigate: (screen: AppScreen) => void;
   studentsData: Student[];
+  establishmentsData?: Establishment[];
   selectedStudent?: Student | null;
   examsData?: Exam[];
   selectedExam?: Exam | null;
@@ -19,12 +20,14 @@ export type StudentScreenProps = {
 
 export function getStudentVisibleExams(student: Student | null | undefined, examsData: Exam[] | undefined) {
   if (!student || !examsData) return [];
+  const studentClassIds = (student.classIds ?? []).map(id => id.trim().toLowerCase());
   const normalizedStudentClasses = student.classes.map(c => c.trim().toLowerCase());
   return examsData.filter((exam) => {
-    // If the exam has classIds and one matches the student's classes directly
-    if (exam.classIds?.some(id => normalizedStudentClasses.includes(id.trim().toLowerCase()))) return true;
-    
-    // Check against the exam.className string
+    // If both sides have IDs, compare ID-to-ID
+    if (exam.classIds && exam.classIds.length > 0 && studentClassIds.length > 0) {
+      if (exam.classIds.some(id => studentClassIds.includes(id.trim().toLowerCase()))) return true;
+    }
+    // Fallback: compare class name strings
     const examClasses = exam.className.split(/[,/|]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
     return examClasses.some(ec => normalizedStudentClasses.includes(ec));
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());

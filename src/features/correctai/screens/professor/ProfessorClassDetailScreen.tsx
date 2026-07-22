@@ -25,7 +25,8 @@ import {
   SearchRow,
   SegmentedControl,
 } from '@/features/correctai/components/ui';
-import { classes, exams, students } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { ClassRoom, Student } from '@/features/correctai/types';
 import {
@@ -236,9 +237,9 @@ export function ProfessorClassDetailScreen({
   studentsData,
 }: ProfessorScreenProps) {
   const insets = useSafeAreaInsets();
-  const classList = classesData ?? classes;
-  const examList = examsData ?? exams;
-  const studentList = studentsData ?? students;
+  const classList = classesData ?? [];
+  const examList = examsData ?? [];
+  const studentList = studentsData ?? [];
   const currentClass = selectedClass ?? classList[0] ?? null;
   const [segment, setSegment] = useState<'students' | 'exams'>('students');
   const [studentQuery, setStudentQuery] = useState('');

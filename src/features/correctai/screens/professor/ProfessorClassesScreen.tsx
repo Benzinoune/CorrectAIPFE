@@ -14,7 +14,7 @@ import {
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Card, FloatingButton, Icon, Icons, ScreenFrame, SearchRow } from '@/features/correctai/components/ui';
-import { classes, professorTabs } from '@/features/correctai/data/mock-data';
+import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { ClassRoom } from '@/features/correctai/types';
 import { normalizeSearch, tabPress, type ProfessorScreenProps } from './shared';
@@ -178,7 +178,7 @@ export function ProfessorClassesScreen({
   const insets = useSafeAreaInsets();
   const [query, setQuery] = useState('');
   const [isCreateOpen, setIsCreateOpen] = useState(false);
-  const classList = classesData ?? classes;
+  const classList = classesData ?? [];
 
   const visibleClasses = useMemo(() => {
     const normalizedQuery = normalizeSearch(query.trim());

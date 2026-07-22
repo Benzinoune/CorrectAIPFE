@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Icon, Icons, InfoRow, PrimaryButton, ScreenFrame, SegmentedControl } from '@/features/correctai/components/ui';
-import { classes, exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import { classNamesFromIds, getResponseSheetOptionFromQuestions, ProfessorScreenProps, scannedCopiesCount, styles } from './shared';
 
@@ -82,8 +83,8 @@ export function ProfessorExamMenuScreen({
   onDeleteExam,
   selectedExam,
 }: ProfessorScreenProps) {
-  const examList = examsData ?? exams;
-  const classList = classesData ?? classes;
+  const examList = examsData ?? [];
+  const classList = classesData ?? [];
   const exam = selectedExam ?? examList[0] ?? null;
   const [segment, setSegment] = useState<'details' | 'statistics'>('details');
 

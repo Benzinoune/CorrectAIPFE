@@ -2,7 +2,8 @@ import { useMemo, useState } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 
 import { Card, Field, Icon, Icons, InfoRow, PrimaryButton, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
-import { classes, exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { ClassRoom, ScannedCopy, Tone } from '@/features/correctai/types';
 import {
@@ -435,8 +436,8 @@ export function ProfessorScanValidationScreen({
   selectedExam,
   selectedScannedCopy,
 }: ProfessorScreenProps) {
-  const exam = selectedExam ?? exams[0] ?? null;
-  const classList = classesData ?? classes;
+  const exam = selectedExam ?? null;
+  const classList = classesData ?? [];
   const copy = useMemo(() => {
     if (!exam?.scannedCopies?.length) {
       return null;

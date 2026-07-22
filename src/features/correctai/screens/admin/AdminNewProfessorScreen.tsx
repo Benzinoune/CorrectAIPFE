@@ -1,30 +1,24 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame } from '@/features/correctai/components/ui';
-import { admins, establishments } from '@/features/correctai/data/mock-data';
+import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { AppScreen, NavItem, ProfessorCreateInput } from '@/features/correctai/types';
+import { isValidEmail } from '@/features/correctai/utils/validation';
 
 const { colors, spacing } = correctAiTheme;
 
 type AdminScreenProps = {
   activeTab: NavItem['id'];
   adminEstablishmentId?: string;
+  establishmentName?: string;
   onCreateProfessor?: (professor: ProfessorCreateInput) => void;
   onNavigate: (screen: AppScreen) => void;
 };
 
 type ProfessorFormErrors = Partial<Record<keyof ProfessorCreateInput, string>>;
 
-function isValidEmail(value: string) {
-  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value.trim());
-}
-
-export function AdminNewProfessorScreen({ adminEstablishmentId, onCreateProfessor, onNavigate }: AdminScreenProps) {
-  const est = adminEstablishmentId ? establishments.find((e) => e.id === adminEstablishmentId) : null;
-  const adminAccount = adminEstablishmentId ? admins.find((a) => a.establishmentId === adminEstablishmentId) : null;
-  const establishmentName = est?.name ?? adminAccount?.establishment ?? '';
+export function AdminNewProfessorScreen({ adminEstablishmentId, establishmentName = '', onCreateProfessor, onNavigate }: AdminScreenProps) {
 
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
@@ -111,12 +105,11 @@ export function AdminNewProfessorScreen({ adminEstablishmentId, onCreateProfesso
         />
         {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
-        <Field
+        <SecureField
           autoCapitalize="none"
           autoCorrect={false}
           label="Password *"
           onChangeText={setPassword}
-          secureTextEntry
           textContentType="newPassword"
           value={password}
         />

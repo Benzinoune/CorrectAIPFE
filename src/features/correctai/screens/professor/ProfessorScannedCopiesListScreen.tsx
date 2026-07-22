@@ -19,7 +19,8 @@ import {
   ScreenFrame,
   StatusPill,
 } from '@/features/correctai/components/ui';
-import { exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { AppScreen, ClassRoom, Exam, ScannedCopy, TabId } from '@/features/correctai/types';
 import {
@@ -164,7 +165,7 @@ export function ProfessorScannedCopiesListScreen({
   onSelectScannedCopy,
   selectedExam,
 }: ReviewCopiesProps) {
-  const exam = selectedExam ?? exams[0] ?? null;
+  const exam = selectedExam ?? null;
   const [filter, setFilter] = useState<string>('all');
   const [sort, setSort] = useState<ReviewSort>('date-desc');
   const [filterModalVisible, setFilterModalVisible] = useState(false);
@@ -514,7 +515,7 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   loadingOverlay: {
-    ...StyleSheet.absoluteFillObject,
+    ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(255, 255, 255, 0.7)',
     zIndex: 999,
     alignItems: 'center',

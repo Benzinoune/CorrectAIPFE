@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { Card, Icon, Icons, ScreenFrame, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
-import { classes, exams, professorTabs, students } from '@/features/correctai/data/mock-data';
+import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { ClassRoom, Student } from '@/features/correctai/types';
 import { ProfessorScreenProps, studentClassLabels, studentDisplayName, styles, tabPress } from './shared';
@@ -43,9 +43,9 @@ export function ProfessorHomeScreen({
   selectedProfessor,
   studentsData,
 }: ProfessorScreenProps) {
-  const examList = examsData ?? exams;
-  const studentList = studentsData ?? students;
-  const classList = classesData ?? classes;
+  const examList = examsData ?? [];
+  const studentList = studentsData ?? [];
+  const classList = classesData ?? [];
   const totalStudents = studentList.length;
   const totalExams = examList.length;
   const totalClasses = classList.length;

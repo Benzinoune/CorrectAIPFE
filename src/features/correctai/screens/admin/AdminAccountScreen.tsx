@@ -46,8 +46,8 @@ export function AdminAccountScreen({ activeTab, onNavigate, onLogout, adminsData
       </View>
 
       <SectionTitle>Informations Personnelles</SectionTitle>
-      <Card icon={Icons.person} style={{ marginBottom: 24 }} title="Détails Personnels">
-        <InfoRow icon={Icons.user} label="Nom complet" value={admin.name} />
+      <Card icon={Icons.profile} style={{ marginBottom: 24 }} title="Détails Personnels">
+        <InfoRow icon={Icons.profile} label="Nom complet" value={admin.name} />
         <InfoRow icon={Icons.mail} label="Email" value={admin.email} />
         <InfoRow icon={Icons.book} label="Établissement" value={admin.establishment} />
       </Card>
@@ -56,7 +56,7 @@ export function AdminAccountScreen({ activeTab, onNavigate, onLogout, adminsData
       <Card icon={Icons.gear} style={{ marginBottom: 24 }} title="Détails du Compte">
         <InfoRow icon={Icons.shield} label="Rôle" value="Administrateur" />
         <InfoRow icon={Icons.check} label="Statut" value={admin.status} />
-        <InfoRow icon={Icons.clock} label="Créé le" value={new Date(admin.createdAt).toLocaleDateString('fr-FR')} />
+        <InfoRow icon={Icons.calendar} label="Créé le" value={new Date(admin.createdAt).toLocaleDateString('fr-FR')} />
       </Card>
 
       <View style={{ marginTop: 24, paddingHorizontal: 16, paddingBottom: 32 }}>

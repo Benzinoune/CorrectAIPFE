@@ -37,7 +37,7 @@ export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStud
     return (
       <ScreenFrame compactHeader onBack={() => onNavigate('student-exams')} title={examTitle}>
         <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 }}>
-          <Icon name={Icons.clock} color="#9CA3AF" size={48} />
+          <Icon name={Icons.calendar} color="#9CA3AF" size={48} />
           <Text style={{ color: '#4B5563', fontSize: 18, fontWeight: '700', marginTop: 16 }}>En attente de correction</Text>
           <Text style={{ color: '#6B7280', fontSize: 14, textAlign: 'center', marginTop: 8 }}>Votre copie n'a pas encore été corrigée par le professeur.</Text>
         </View>

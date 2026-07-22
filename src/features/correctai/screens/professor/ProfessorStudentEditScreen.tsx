@@ -1,6 +1,5 @@
 import { useEffect, useState } from 'react';
 import {
-  Alert,
   FlatList,
   Pressable,
   StyleSheet,
@@ -11,23 +10,22 @@ import {
 
 import {
   Card,
-  Field,
   FormActions,
   Icon,
   Icons,
   PrimaryButton,
   ScreenFrame,
+  SecureField,
 } from '@/features/correctai/components/ui';
-import { classes, students } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { Student } from '@/features/correctai/types';
 import {
-  emailPattern,
   ProfessorScreenProps,
   resolveSelectedClassIds,
   StudentFormErrors,
   StudentFormValues,
-  studentDisplayName,
   validateStudentForm,
 } from './shared';
 import { StudentFormField } from './shared-components';
@@ -40,12 +38,11 @@ export function ProfessorStudentEditScreen({
   classesData,
   studentsData,
   onUpdateStudent,
-  onDeleteStudent,
 }: ProfessorScreenProps) {
-  const classList = classesData ?? classes;
-  const studentList = studentsData ?? students;
+  const classList = classesData ?? [];
+  const studentList = studentsData ?? [];
   const student =
-    studentList.find((item) => item.id === selectedStudent?.id) ?? selectedStudent ?? studentList[0] ?? students[0];
+    studentList.find((item) => item.id === selectedStudent?.id) ?? selectedStudent ?? studentList[0];
   const [draftStudent, setDraftStudent] = useState<Student>(() => ({
     ...student,
     classes: [...student.classes],
@@ -66,13 +63,6 @@ export function ProfessorStudentEditScreen({
     setSelectedClasses((current) =>
       current.includes(classId) ? current.filter((item) => item !== classId) : [...current, classId],
     );
-  };
-
-  const handleDelete = () => {
-    Alert.alert('Supprimer', `Supprimer ${studentDisplayName(student)} ? Cette action est irreversible.`, [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: () => { onDeleteStudent?.(student.id); onNavigate('professor-students'); } },
-    ]);
   };
 
   const handleSubmit = () => {
@@ -97,7 +87,7 @@ export function ProfessorStudentEditScreen({
       return;
     }
 
-    const nextClasses = [...selectedClasses];
+    const nextClassIds = [...selectedClasses];
 
     onUpdateStudent?.({
       ...draftStudent,
@@ -105,13 +95,14 @@ export function ProfessorStudentEditScreen({
       lastName: draftStudent.lastName.trim(),
       matricule: draftStudent.matricule.trim(),
       email: draftStudent.email.trim().toLowerCase(),
-      classes: nextClasses,
+      classes: nextClassIds.map((id) => classList.find((c) => c.id === id)?.name ?? id),
+      classIds: nextClassIds,
     });
     onNavigate('professor-student-detail');
   };
 
   return (
-    <ScreenFrame compactHeader scrollable={false} onBack={() => onNavigate('professor-student-detail')} title="Etudiant">
+    <ScreenFrame compactHeader scrollable={true} onBack={() => onNavigate('professor-student-detail')} title="Etudiant">
       <View key={student.id} style={styles.editStudentPage}>
         <View style={styles.editStudentFields}>
           <StudentFormField
@@ -143,10 +134,9 @@ export function ProfessorStudentEditScreen({
             autoCorrect={false}
             keyboardType="email-address"
           />
-          <StudentFormField
+          <SecureField
             label="Password"
             error={formErrors.password}
-            secureTextEntry
             value={draftStudent.password}
             onChangeText={(value) => setDraftStudent((current) => ({ ...current, password: value }))}
             autoCapitalize="none"
@@ -160,59 +150,62 @@ export function ProfessorStudentEditScreen({
           style={styles.classSelectCard}
           title={`Classes (${selectedClasses.length})`}
           subtitle="Selection multiple">
-          <FlatList
-            data={classList}
-            extraData={selectedClasses}
-            keyExtractor={(item) => item.id}
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-            renderItem={({ item }) => {
-              const selected = selectedClasses.includes(item.id);
+          {classList.length === 0 ? (
+            <View style={styles.emptyClassContainer}>
+              <Text style={styles.emptyClassText}>
+                Aucune classe disponible.{'\n'}Creez une classe d'abord ou continuez sans en assigner.
+              </Text>
+              <PrimaryButton icon={Icons.plus} onPress={() => onNavigate('professor-classes')} variant="soft">
+                Creer une classe
+              </PrimaryButton>
+            </View>
+          ) : (
+            <FlatList
+              data={classList}
+              extraData={selectedClasses}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              nestedScrollEnabled
+              scrollEnabled={false}
+              renderItem={({ item }) => {
+                const selected = selectedClasses.includes(item.id);
 
-              return (
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
-                  onPress={() => toggleClass(item.id)}
-                  style={({ pressed }) => [
-                    styles.classSelectRow,
-                    selected && styles.classSelectRowSelected,
-                    pressed && styles.pressed,
-                  ]}>
-                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                    {selected ? <Icon name={Icons.check} color={colors.card} size={14} /> : null}
-                  </View>
-                  <View style={styles.classSelectRowText}>
-                    <Text numberOfLines={1} style={styles.classSelectTitle}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.classSelectSubtitle}>
-                      {item.students} etudiants - {item.exams} examens
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-            showsVerticalScrollIndicator={false}
-            style={styles.classSelectList}
-            contentContainerStyle={styles.classSelectListContent}
-            ItemSeparatorComponent={() => <View style={styles.classSelectSeparator} />}
-          />
+                return (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => toggleClass(item.id)}
+                    style={({ pressed }) => [
+                      styles.classSelectRow,
+                      selected && styles.classSelectRowSelected,
+                      pressed && styles.pressed,
+                    ]}>
+                    <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                      {selected ? <Icon name={Icons.check} color={colors.card} size={14} /> : null}
+                    </View>
+                    <View style={styles.classSelectRowText}>
+                      <Text numberOfLines={1} style={styles.classSelectTitle}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.classSelectSubtitle}>
+                        {item.students} etudiants - {item.exams} examens
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              }}
+              showsVerticalScrollIndicator={false}
+              style={styles.classSelectList}
+              contentContainerStyle={styles.classSelectListContent}
+              ItemSeparatorComponent={() => <View style={styles.classSelectSeparator} />}
+            />
+          )}
         </Card>
 
-        <View style={styles.dangerActions}>
-          <PrimaryButton
-            icon={Icons.trash}
-            onPress={handleDelete}
-            tone="danger"
-            variant="soft">
-            Supprimer
-          </PrimaryButton>
-          <FormActions
-            onCancel={() => onNavigate('professor-student-detail')}
-            onSubmit={handleSubmit}
-          />
-        </View>
+        <FormActions
+          onCancel={() => onNavigate('professor-student-detail')}
+          onSubmit={handleSubmit}
+        />
       </View>
     </ScreenFrame>
   );
@@ -223,6 +216,18 @@ const styles = StyleSheet.create({
   readonly: {
     color: colors.ink,
     fontWeight: '800',
+  },
+  emptyClassContainer: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
+  },
+  emptyClassText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 20,
   },
   studentFormFieldGroup: {
     gap: 4,
@@ -241,23 +246,14 @@ const styles = StyleSheet.create({
     lineHeight: 16,
   },
   editStudentPage: {
-    flex: 1,
-    minHeight: 0,
     gap: spacing.md,
   },
   editStudentFields: {
     gap: spacing.md,
   },
-  dangerActions: {
-    gap: spacing.sm,
-  },
-  classSelectCard: {
-    flex: 1,
-    minHeight: 0,
-  },
+  classSelectCard: {},
   classSelectList: {
-    flex: 1,
-    minHeight: 0,
+    maxHeight: 300,
   },
   classSelectListContent: {
     paddingBottom: spacing.xs,

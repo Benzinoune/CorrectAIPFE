@@ -22,7 +22,8 @@ import {
   StatusPill,
   TextButton,
 } from '@/features/correctai/components/ui';
-import { classes, exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { Exam } from '@/features/correctai/types';
 import {
@@ -47,8 +48,8 @@ export function ProfessorScannedCopyDetailScreen({
   selectedScannedCopy,
 }: ProfessorScreenProps) {
   type CopyDetailTab = 'image' | 'questions' | 'tags';
-  const exam = selectedExam ?? exams[0] ?? null;
-  const classList = classesData ?? classes;
+  const exam = selectedExam ?? null;
+  const classList = classesData ?? [];
   const [detailTab, setDetailTab] = useState<CopyDetailTab>('image');
   const [zoomLevel, setZoomLevel] = useState(1);
   const [menuVisible, setMenuVisible] = useState(false);

@@ -21,9 +21,11 @@ import {
   SectionTitle,
   StatGrid,
   TextButton,
+  SecureField,
 } from '@/features/correctai/components/ui';
 import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
+import { isValidEmail, EMAIL_VALIDATION_MESSAGE } from '@/features/correctai/utils/validation';
 import { ProfessorScreenProps, tabPress } from './shared';
 
 const { colors, spacing, radius } = correctAiTheme;
@@ -139,7 +141,7 @@ export function ProfessorAccountScreen({
   activeTab,
   classesData,
   examsData,
-  onLogin,
+  onLogout,
   onNavigate,
   onUpdateProfessor,
   professorsData,
@@ -178,7 +180,7 @@ export function ProfessorAccountScreen({
     const trimmedName = editName.trim();
     const trimmedEmail = editEmail.trim().toLowerCase();
     if (!trimmedName) { setEditError('Le nom est requis.'); return; }
-    if (!trimmedEmail || !trimmedEmail.includes('@')) { setEditError('Email invalide.'); return; }
+    if (!trimmedEmail || !isValidEmail(trimmedEmail)) { setEditError(EMAIL_VALIDATION_MESSAGE); return; }
     setEditError('');
     onUpdateProfessor({
       ...professor,
@@ -209,7 +211,13 @@ export function ProfessorAccountScreen({
       'Voulez-vous vraiment vous deconnecter ?',
       [
         { text: 'Annuler', style: 'cancel' },
-        { text: 'Se deconnecter', style: 'destructive', onPress: () => onNavigate('login') },
+        { text: 'Se deconnecter', style: 'destructive', onPress: () => {
+          if (onLogout) {
+            onLogout();
+          } else {
+            onNavigate('login');
+          }
+        }},
       ],
     );
   };
@@ -309,9 +317,9 @@ export function ProfessorAccountScreen({
           <View style={localStyles.modalContent}>
             <Text style={localStyles.modalTitle}>Changer le mot de passe</Text>
             {passwordError ? <Text style={localStyles.modalError}>{passwordError}</Text> : null}
-            <Field label="Mot de passe actuel" value={currentPassword} onChangeText={setCurrentPassword} secureTextEntry />
-            <Field label="Nouveau mot de passe" value={newPassword} onChangeText={setNewPassword} secureTextEntry />
-            <Field label="Confirmer le mot de passe" value={confirmPassword} onChangeText={setConfirmPassword} secureTextEntry />
+            <SecureField label="Mot de passe actuel" value={currentPassword} onChangeText={setCurrentPassword} />
+            <SecureField label="Nouveau mot de passe" value={newPassword} onChangeText={setNewPassword} />
+            <SecureField label="Confirmer le mot de passe" value={confirmPassword} onChangeText={setConfirmPassword} />
             <View style={localStyles.modalActions}>
               <TextButton onPress={() => { setPasswordModalVisible(false); setPasswordError(''); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); }} tone="neutral">Annuler</TextButton>
               <PrimaryButton onPress={handleChangePassword}>Changer</PrimaryButton>

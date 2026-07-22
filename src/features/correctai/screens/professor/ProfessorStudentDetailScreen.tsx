@@ -1,7 +1,8 @@
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
 import { Avatar, Card, EmptyGap, Icons, InfoRow, PrimaryButton, ScreenFrame } from '@/features/correctai/components/ui';
-import { classes, students } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import { ProfessorScreenProps, studentClassLabels, studentDisplayName } from './shared';
 
@@ -67,10 +68,10 @@ export function ProfessorStudentDetailScreen({
   classesData,
   studentsData,
 }: ProfessorScreenProps) {
-  const classList = classesData ?? classes;
-  const studentList = studentsData ?? students;
+  const classList = classesData ?? [];
+  const studentList = studentsData ?? [];
   const student =
-    studentList.find((item) => item.id === selectedStudent?.id) ?? selectedStudent ?? studentList[0] ?? students[0];
+    studentList.find((item) => item.id === selectedStudent?.id) ?? selectedStudent ?? studentList[0];
   const classLabels = studentClassLabels(student, classList);
 
   const handleDelete = () => {

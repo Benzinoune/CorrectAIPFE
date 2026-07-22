@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 
+import { InstitutionUnavailableScreen } from '@/features/correctai/components/InstitutionUnavailableScreen';
 import {
   AdminHomeScreen,
   AdminNewProfessorScreen,
@@ -82,6 +83,7 @@ import type {
   TabId,
   UserRole,
 } from '@/features/correctai/types';
+import { checkInstitutionStatus, getBlockedMessage } from '@/features/correctai/utils/institution-status';
 
 const homeScreens: Record<UserRole, AppScreen> = {
   super_admin: 'super-admin-home',
@@ -121,6 +123,7 @@ function cloneStudent(student: Student): Student {
   return {
     ...student,
     classes: [...student.classes],
+    classIds: student.classIds ? [...student.classIds] : undefined,
   };
 }
 
@@ -307,6 +310,11 @@ function rewriteStudentClassRefs(values: string[], classItem: ClassRoom, nextNam
     .filter(Boolean);
 }
 
+function rewriteStudentClassIdRefs(classIds: string[] | undefined, classItem: ClassRoom): string[] {
+  if (!classIds) return [];
+  return classIds.filter((id) => id !== classItem.id);
+}
+
 function rewriteScannedCopyClassRefs(copy: ScannedCopy, classItem: ClassRoom, nextName?: string) {
   return {
     ...copy,
@@ -315,6 +323,9 @@ function rewriteScannedCopyClassRefs(copy: ScannedCopy, classItem: ClassRoom, ne
 }
 
 function studentBelongsToClass(student: Student, classItem: ClassRoom) {
+  if (student.classIds?.some((id) => id === classItem.id)) {
+    return true;
+  }
   return student.classes.some((value) => matchesClassReference(value, classItem));
 }
 
@@ -485,21 +496,124 @@ export function CorrectAiApp() {
     [loggedInRole, loggedInUserId, studentsData],
   );
 
-  const login = (nextRole: UserRole, establishmentId?: string, userId?: string) => {
-    setAdminEstablishmentId(establishmentId);
-    setLoggedInRole(nextRole);
-    setLoggedInUserId(userId ?? null);
-    if (nextRole === 'professor' && userId) {
-      const prof = professorsData.find((p) => p.id === userId);
-      if (prof) setSelectedProfessor(prof);
-    } else if (nextRole === 'student' && userId) {
-      const student = studentsData.find((s) => s.id === userId);
-      if (student) setSelectedStudent(student);
-    } else if (nextRole === 'admin' && userId) {
-      const admin = adminsData.find((a) => a.id === userId);
-      if (admin) setSelectedAdmin(admin);
+  const institutionCheck = useMemo(() => {
+    if (!loggedInRole || loggedInRole === 'super_admin') {
+      return { allowed: true } as const;
     }
-    setScreen(homeScreens[nextRole]);
+    const establishmentId = loggedInProfessor?.establishmentId
+      ?? loggedInAdmin?.establishmentId
+      ?? loggedInStudent?.establishmentId
+      ?? adminEstablishmentId
+      ?? '';
+    return checkInstitutionStatus(establishmentsData, establishmentId);
+  }, [loggedInRole, loggedInProfessor?.establishmentId, loggedInAdmin?.establishmentId, loggedInStudent?.establishmentId, adminEstablishmentId, establishmentsData]);
+
+  useEffect(() => {
+    if (!institutionCheck.allowed && loggedInRole && loggedInRole !== 'super_admin') {
+      setLoggedInUserId(null);
+      setLoggedInRole(null);
+      setAdminEstablishmentId(undefined);
+      setScreen('login');
+    }
+  }, [institutionCheck.allowed, loggedInRole]);
+
+  const professorEstablishmentId = loggedInProfessor?.establishmentId ?? '';
+  const professorClasses = useMemo(
+    () => classesWithCounts.filter((c) => c.establishmentId === professorEstablishmentId),
+    [classesWithCounts, professorEstablishmentId],
+  );
+  const professorExams = useMemo(
+    () => examsData.filter(
+      (e) => e.establishmentId === professorEstablishmentId
+        && (!e.professorId || e.professorId === loggedInProfessor?.id),
+    ),
+    [examsData, professorEstablishmentId, loggedInProfessor?.id],
+  );
+  const professorStudents = useMemo(
+    () => studentsData.filter((s) => s.establishmentId === professorEstablishmentId),
+    [studentsData, professorEstablishmentId],
+  );
+
+  const studentEstablishmentId = loggedInStudent?.establishmentId ?? '';
+  const studentClassIds = loggedInStudent?.classIds ?? [];
+  const studentClassNames = loggedInStudent?.classes ?? [];
+  const studentExams = useMemo(
+    () => examsData.filter((e) => {
+      if (e.establishmentId !== studentEstablishmentId) return false;
+      if (studentClassIds.length > 0 && e.classIds?.some((id) => studentClassIds.includes(id))) return true;
+      return e.className
+        .split(/[,/|]+/)
+        .map((part) => part.trim().toLowerCase())
+        .filter(Boolean)
+        .some((part) => studentClassNames.some((name) => name.toLowerCase() === part));
+    }),
+    [examsData, studentEstablishmentId, studentClassIds, studentClassNames],
+  );
+  const studentStudents = useMemo(
+    () => studentsData.filter((s) => s.id === loggedInStudent?.id),
+    [studentsData, loggedInStudent?.id],
+  );
+
+  const login = (email: string, password: string): { success: boolean; error?: string } => {
+    const normalizedEmail = email.trim().toLowerCase();
+
+    if (normalizedEmail === superAdminUser.email && password === superAdminUser.password) {
+      setLoggedInRole('super_admin');
+      setLoggedInUserId(superAdminUser.id);
+      setAdminEstablishmentId(undefined);
+      setScreen('super-admin-home');
+      return { success: true };
+    }
+
+    const matchedAdmin = adminsData.find(
+      (a) => a.email === normalizedEmail && a.password === password && a.status === 'ACTIF',
+    );
+    if (matchedAdmin) {
+      const instCheck = checkInstitutionStatus(establishmentsData, matchedAdmin.establishmentId);
+      if (!instCheck.allowed) {
+        return { success: false, error: getBlockedMessage(instCheck.reason!) };
+      }
+      setLoggedInRole('admin');
+      setLoggedInUserId(matchedAdmin.id);
+      setAdminEstablishmentId(matchedAdmin.establishmentId);
+      setSelectedAdmin(matchedAdmin);
+      setScreen('admin-home');
+      return { success: true };
+    }
+
+    const matchedProfessor = professorsData.find(
+      (p) => p.email === normalizedEmail && p.password === password && p.status === 'ACTIF',
+    );
+    if (matchedProfessor) {
+      const instCheck = checkInstitutionStatus(establishmentsData, matchedProfessor.establishmentId);
+      if (!instCheck.allowed) {
+        return { success: false, error: getBlockedMessage(instCheck.reason!) };
+      }
+      setLoggedInRole('professor');
+      setLoggedInUserId(matchedProfessor.id);
+      setAdminEstablishmentId(matchedProfessor.establishmentId);
+      setSelectedProfessor(matchedProfessor);
+      setScreen('professor-home');
+      return { success: true };
+    }
+
+    const matchedStudent = studentsData.find(
+      (s) => s.email === normalizedEmail && s.password === password,
+    );
+    if (matchedStudent) {
+      const instCheck = checkInstitutionStatus(establishmentsData, matchedStudent.establishmentId);
+      if (!instCheck.allowed) {
+        return { success: false, error: getBlockedMessage(instCheck.reason!) };
+      }
+      setLoggedInRole('student');
+      setLoggedInUserId(matchedStudent.id);
+      setAdminEstablishmentId(matchedStudent.establishmentId);
+      setSelectedStudent(matchedStudent);
+      setScreen('student-home');
+      return { success: true };
+    }
+
+    return { success: false, error: 'Email ou mot de passe incorrect' };
   };
 
   const createAdmin = (draft: AdminCreateInput) => {
@@ -536,6 +650,7 @@ export function CorrectAiApp() {
   };
 
   const deleteProfessor = (professorId: string) => {
+    const professorToDelete = professorsData.find((p) => p.id === professorId);
     setProfessorsData((current) => {
       const next = current.filter((p) => p.id !== professorId);
       setSelectedProfessor((currentProf) =>
@@ -543,6 +658,26 @@ export function CorrectAiApp() {
       );
       return next;
     });
+    if (professorToDelete) {
+      setEstablishmentsData((current) =>
+        current.map((est) => {
+          if (est.id !== professorToDelete.establishmentId) return est;
+          const newCount = Math.max(0, est.professorsCount - 1);
+          return {
+            ...est,
+            professorsCount: newCount,
+            stats: est.stats.map((s) =>
+              s.label.toLowerCase().includes('prof') ? { ...s, value: String(newCount) } : s,
+            ),
+          };
+        }),
+      );
+      setExamsData((current) =>
+        current.map((exam) =>
+          exam.professorId === professorId ? { ...exam, professorId: '' } : exam,
+        ),
+      );
+    }
   };
 
   const adminInitials = (name: string) =>
@@ -608,6 +743,24 @@ export function CorrectAiApp() {
       );
       return next;
     });
+    setAdminsData((current) => current.filter((a) => a.establishmentId !== establishmentId));
+    setProfessorsData((current) => {
+      const next = current.filter((p) => p.establishmentId !== establishmentId);
+      setSelectedProfessor((currentProf) =>
+        currentProf?.establishmentId === establishmentId ? (next[0] ? cloneProfessor(next[0]) : null) : currentProf,
+      );
+      return next;
+    });
+    setClassesData((current) => current.filter((c) => c.establishmentId !== establishmentId).map(cloneClass));
+    setExamsData((current) => {
+      const next = current.filter((e) => e.establishmentId !== establishmentId);
+      setSelectedExam((currentExam) =>
+        currentExam?.establishmentId === establishmentId ? null : currentExam,
+      );
+      setSelectedScannedCopy(null);
+      return next;
+    });
+    setStudentsData((current) => current.filter((s) => s.establishmentId !== establishmentId).map(cloneStudent));
   };
 
   const createProfessor = (professorDraft: ProfessorCreateInput) => {
@@ -667,6 +820,7 @@ export function CorrectAiApp() {
     const lastName = studentDraft.lastName.trim();
     const matricule = studentDraft.matricule.trim();
     const email = studentDraft.email.trim().toLowerCase();
+    const estId = loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? '';
     const nextStudent = cloneStudent({
       id: `student-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
       initials: buildStudentInitials(firstName, lastName),
@@ -677,15 +831,32 @@ export function CorrectAiApp() {
       password: studentDraft.password,
       externalRef: matricule || `MAT-${Date.now().toString(36).slice(-4)}`,
       correctAiId: buildCorrectAiId(),
-      establishmentId: '',
+      establishmentId: estId,
       classes: [...studentDraft.classes],
+      classIds: studentDraft.classIds ? [...studentDraft.classIds] : undefined,
     });
 
     setStudentsData((currentStudents) => [nextStudent, ...currentStudents]);
     setSelectedStudent(nextStudent);
+    if (estId) {
+      setEstablishmentsData((current) =>
+        current.map((est) => {
+          if (est.id !== estId) return est;
+          const newCount = est.studentsCount + 1;
+          return {
+            ...est,
+            studentsCount: newCount,
+            stats: est.stats.map((s) =>
+              s.label.toLowerCase().includes('etudiant') ? { ...s, value: String(newCount) } : s,
+            ),
+          };
+        }),
+      );
+    }
   };
 
   const deleteStudent = (studentId: string) => {
+    const studentToDelete = studentsData.find((s) => s.id === studentId);
     setStudentsData((currentStudents) => {
       const nextStudents = currentStudents.filter((student) => student.id !== studentId);
 
@@ -695,12 +866,30 @@ export function CorrectAiApp() {
 
       return nextStudents.map(cloneStudent);
     });
+    if (studentToDelete?.establishmentId) {
+      setEstablishmentsData((current) =>
+        current.map((est) => {
+          if (est.id !== studentToDelete.establishmentId) return est;
+          const newCount = Math.max(0, est.studentsCount - 1);
+          return {
+            ...est,
+            studentsCount: newCount,
+            stats: est.stats.map((s) =>
+              s.label.toLowerCase().includes('etudiant') ? { ...s, value: String(newCount) } : s,
+            ),
+          };
+        }),
+      );
+    }
   };
 
   const createExam = (examDraft: Omit<Exam, 'id'>) => {
+    const estId = loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? examDraft.establishmentId ?? '';
     const nextExam = cloneExam({
       ...examDraft,
       id: `exam-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+      establishmentId: estId,
+      professorId: examDraft.professorId ?? loggedInProfessor?.id ?? '',
       classIds: examDraft.classIds ? [...examDraft.classIds] : undefined,
       questionBank: examDraft.questionBank?.map((question) => ({
         ...question,
@@ -798,6 +987,10 @@ export function CorrectAiApp() {
       id: `copy-${selectedExam.id}-${Date.now().toString(36)}-${nextCopyNumber}`,
       examId: selectedExam.id,
       examName: selectedExam.name,
+      studentId: (() => {
+        const mat = draft?.ocrResult?.matricule?.trim() || draft?.matricule?.trim() || '';
+        return mat ? studentsData.find((s) => s.matricule === mat)?.id : undefined;
+      })(),
       studentName: draft?.ocrResult?.name?.trim() || draft?.studentName?.trim() || 'À extraire plus tard',
       matricule: draft?.ocrResult?.matricule?.trim() || draft?.matricule?.trim() || 'À extraire plus tard',
       className: selectedExam.classIds?.length
@@ -899,7 +1092,7 @@ export function CorrectAiApp() {
       name: nextName,
       exams: 0,
       students: 0,
-      establishmentId: '',
+      establishmentId: loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? '',
     };
 
     setClassesData((currentClasses) => [...currentClasses, nextClass]);
@@ -990,6 +1183,7 @@ export function CorrectAiApp() {
       currentStudents.map((student) => ({
         ...student,
         classes: rewriteStudentClassRefs(student.classes, previousClass),
+        classIds: rewriteStudentClassIdRefs(student.classIds, previousClass),
       })),
     );
     setSelectedStudent((currentStudent) =>
@@ -997,6 +1191,7 @@ export function CorrectAiApp() {
         ? {
             ...currentStudent,
             classes: rewriteStudentClassRefs(currentStudent.classes, previousClass),
+            classIds: rewriteStudentClassIdRefs(currentStudent.classIds, previousClass),
           }
         : currentStudent,
     );
@@ -1018,13 +1213,27 @@ export function CorrectAiApp() {
     );
   };
 
+  if (!institutionCheck.allowed && loggedInRole && loggedInRole !== 'super_admin') {
+    return (
+      <InstitutionUnavailableScreen
+        message={getBlockedMessage(institutionCheck.reason!)}
+        onReturnToLogin={() => {
+          setLoggedInUserId(null);
+          setLoggedInRole(null);
+          setAdminEstablishmentId(undefined);
+          setScreen('login');
+        }}
+      />
+    );
+  }
+
   switch (screen) {
     case 'splash':
-      return <SplashScreen onLogin={login} onNavigate={navigate} />;
+      return <SplashScreen onNavigate={navigate} />;
     case 'forgot-password':
-      return <ForgotPasswordScreen onLogin={login} onNavigate={navigate} />;
+      return <ForgotPasswordScreen onNavigate={navigate} />;
     case 'signup':
-      return <SignupScreen onLogin={login} onNavigate={navigate} />;
+      return <SignupScreen onNavigate={navigate} />;
     case 'super-admin-home':
       return (
         <SuperAdminHomeScreen
@@ -1145,9 +1354,10 @@ export function CorrectAiApp() {
       return (
         <SuperAdminAccountScreen
           activeTab={activeTab}
+          establishmentsData={establishmentsData}
           loggedInSuperAdmin={loggedInRole === 'super_admin' && loggedInUserId === superAdminUser.id ? superAdminUser : undefined}
           onNavigate={navigate}
-          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }}
+          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }}
         />
       );
     case 'admin-home':
@@ -1187,6 +1397,7 @@ export function CorrectAiApp() {
         <AdminNewProfessorScreen
           activeTab={activeTab}
           adminEstablishmentId={adminEstablishmentId}
+          establishmentName={establishmentsData.find((e) => e.id === adminEstablishmentId)?.name ?? ''}
           onCreateProfessor={createProfessor}
           onNavigate={navigate}
         />
@@ -1196,7 +1407,7 @@ export function CorrectAiApp() {
         <AdminAccountScreen
           activeTab={activeTab}
           onNavigate={navigate}
-          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }}
+          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }}
           adminsData={adminsData}
           selectedAdmin={loggedInAdmin ?? selectedAdmin}
         />
@@ -1205,11 +1416,11 @@ export function CorrectAiApp() {
       return (
         <ProfessorHomeScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
-          examsData={examsData}
+          classesData={professorClasses}
+          examsData={professorExams}
           onNavigate={navigate}
           selectedProfessor={loggedInProfessor ?? selectedProfessorForRender}
-          studentsData={studentsData}
+          studentsData={professorStudents}
         />
       );
     case 'professor-students':
@@ -1217,21 +1428,21 @@ export function CorrectAiApp() {
         <ProfessorStudentsScreen
           activeTab={activeTab}
           onNavigate={navigate}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onSelectStudent={setSelectedStudent}
-          studentsData={studentsData}
+          studentsData={professorStudents}
         />
       );
     case 'professor-student-detail':
       return (
         <ProfessorStudentDetailScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onDeleteStudent={deleteStudent}
           onNavigate={navigate}
           selectedStudent={selectedStudentForRender}
-          studentsData={studentsData}
-          previousScreen={previousScreen}
+          studentsData={professorStudents}
+          previousScreen={previousScreenRef.current}
         />
       );
     case 'professor-student-edit':
@@ -1240,21 +1451,21 @@ export function CorrectAiApp() {
           activeTab={activeTab}
           onNavigate={navigate}
           selectedStudent={selectedStudentForRender}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onUpdateStudent={updateStudent}
           onDeleteStudent={deleteStudent}
-          studentsData={studentsData}
+          studentsData={professorStudents}
         />
       );
     case 'professor-add-student':
       return (
         <ProfessorAddStudentScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onCreateStudent={createStudent}
           onNavigate={navigate}
-          selectedClass={selectedClassForRender}
-          studentsData={studentsData}
+          selectedClass={null}
+          studentsData={professorStudents}
           previousScreen={previousScreenRef.current}
         />
       );
@@ -1262,7 +1473,7 @@ export function CorrectAiApp() {
       return (
         <ProfessorClassesScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onCreateClass={createClass}
           onNavigate={navigate}
           onSelectClass={setSelectedClass}
@@ -1272,21 +1483,21 @@ export function CorrectAiApp() {
       return (
         <ProfessorClassDetailScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
-          examsData={examsData}
+          classesData={professorClasses}
+          examsData={professorExams}
           onDeleteClass={deleteClass}
           onNavigate={navigate}
           onSelectExam={setSelectedExam}
           onUpdateClass={updateClass}
           selectedClass={selectedClassForRender}
-          studentsData={studentsData}
+          studentsData={professorStudents}
         />
       );
     case 'professor-exams':
       return (
         <ProfessorExamsScreen
           activeTab={activeTab}
-          examsData={examsData}
+          examsData={professorExams}
           onNavigate={navigate}
           onSelectExam={setSelectedExam}
         />
@@ -1295,8 +1506,8 @@ export function CorrectAiApp() {
       return (
         <ProfessorNewExamScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
-          examsData={examsData}
+          classesData={professorClasses}
+          examsData={professorExams}
           onCreateExam={createExam}
           onNavigate={navigate}
           onUpdateExam={updateExam}
@@ -1309,8 +1520,8 @@ export function CorrectAiApp() {
       return (
         <ProfessorExamMenuScreen
           activeTab={activeTab}
-          examsData={examsData}
-          classesData={classesWithCounts}
+          examsData={professorExams}
+          classesData={professorClasses}
           onNavigate={navigate}
           onSetScannerMode={setScannerMode}
           selectedExam={selectedExamForRender}
@@ -1322,7 +1533,7 @@ export function CorrectAiApp() {
       return (
         <ProfessorAnswerSheetScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onNavigate={navigate}
           selectedExam={selectedExamForRender}
         />
@@ -1353,7 +1564,7 @@ export function CorrectAiApp() {
       return (
         <ProfessorScannedCopiesListScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onNavigate={navigate}
           onSelectScannedCopy={setSelectedScannedCopy}
           onUpdateExam={updateExam}
@@ -1365,7 +1576,7 @@ export function CorrectAiApp() {
       return (
         <ProfessorScannedCopyDetailScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onNavigate={navigate}
           onSelectScannedCopy={setSelectedScannedCopy}
           onUpdateExam={updateExam}
@@ -1377,7 +1588,7 @@ export function CorrectAiApp() {
       return (
         <ProfessorScanValidationScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onNavigate={navigate}
           onSelectScannedCopy={setSelectedScannedCopy}
           onUpdateExam={updateExam}
@@ -1388,7 +1599,7 @@ export function CorrectAiApp() {
     case 'professor-copy-revision':
       return (
         <ProfessorScannedCopyCorrectionScreen
-          classesData={classesWithCounts}
+          classesData={professorClasses}
           onNavigate={navigate}
           onSelectScannedCopy={setSelectedScannedCopy}
           onUpdateExam={updateExam}
@@ -1422,26 +1633,26 @@ export function CorrectAiApp() {
       return (
         <ProfessorAccountScreen
           activeTab={activeTab}
-          classesData={classesWithCounts}
-          examsData={examsData}
-          onLogin={login}
+          classesData={professorClasses}
+          examsData={professorExams}
+          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }}
           onNavigate={navigate}
           onUpdateProfessor={updateProfessor}
           professorsData={professorsData}
           selectedProfessor={loggedInProfessor ?? selectedProfessorForRender}
-          studentsData={studentsData}
+          studentsData={professorStudents}
         />
       );
     case 'student-home':
-      return <StudentHomeScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
+      return <StudentHomeScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
     case 'student-exams':
-      return <StudentExamsScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
+      return <StudentExamsScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
     case 'student-exam-result':
-      return <StudentExamResultScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
+      return <StudentExamResultScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
     case 'student-report':
-      return <StudentReportScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
+      return <StudentReportScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
     case 'student-profile':
-      return <StudentProfileScreen activeTab={activeTab} examsData={examsData} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentsData} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); navigate('login'); }} />;
+      return <StudentProfileScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
     case 'login':
     default:
       return <LoginScreen onLogin={login} onNavigate={navigate} />;

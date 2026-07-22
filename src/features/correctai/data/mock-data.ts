@@ -3,32 +3,20 @@ import type {
   ClassRoom,
   Establishment,
   Exam,
-  ExamClassScore,
   NavItem,
   Professor,
-  ReportRow,
-  StatItem,
   Student,
-  StudentExam,
 } from '@/features/correctai/types';
 
-export const professorStats: StatItem[] = [
-  { label: 'Classes', value: '3', tone: 'primary' },
-  { label: 'Exames', value: '12', tone: 'primary' },
-  { label: 'Copies', value: '50', tone: 'primary' },
-];
-
-export const adminStats: StatItem[] = [
-  { label: 'Professeurs', value: '24', tone: 'primary' },
-  { label: 'Actifs', value: '20', tone: 'success' },
-  { label: 'Suspendus', value: '4', tone: 'danger' },
-];
-
-export const superAdminUser = {
+export const superAdminUser: Admin = {
   id: 'super-admin-1',
+  initials: 'SA',
   name: 'Super Admin',
   email: 'super@correctai.test',
   password: 'Super@123',
+  status: 'ACTIF',
+  establishment: '',
+  establishmentId: '',
   createdAt: '2023-01-01T00:00:00Z',
 };
 
@@ -71,16 +59,17 @@ export const admins: Admin[] = [
 export const students: Student[] = [
   {
     id: '1',
-    initials: 'AL',
-    firstName: 'Aicha',
-    lastName: 'Lolo',
+    initials: 'AT',
+    firstName: 'abdo',
+    lastName: 'tyson',
     matricule: 'MAT:2025-001',
-    email: 'aicha.lolo@correctai.test',
+    email: 'abdo.tyson@correctai.test',
     password: 'Student@123',
     externalRef: 'K110',
     correctAiId: '1901',
     establishmentId: 'est-1',
-    classes: ['Math', 'Francais'],
+    classes: ['2 eme annee DEV', '2 annee mobile'],
+    classIds: ['dev2', 'mobile2'],
   },
   {
     id: '2',
@@ -94,6 +83,7 @@ export const students: Student[] = [
     correctAiId: '1901',
     establishmentId: 'est-1',
     classes: ['Math', 'Francais'],
+    classIds: [],
   },
   {
     id: '3',
@@ -107,6 +97,7 @@ export const students: Student[] = [
     correctAiId: '1944',
     establishmentId: 'est-2',
     classes: ['Informatique'],
+    classIds: [],
   },
   {
     id: '4',
@@ -120,6 +111,7 @@ export const students: Student[] = [
     correctAiId: '1951',
     establishmentId: 'est-2',
     classes: ['Gestion'],
+    classIds: [],
   },
 ];
 
@@ -131,13 +123,13 @@ export const establishments: Establishment[] = [
     adminName: 'Karim Yelles',
     adminEmail: 'admin@ibnkhaldoun.dz',
     status: 'ACTIF',
-    professorsCount: 42,
-    studentsCount: 1250,
+    professorsCount: 2,
+    studentsCount: 2,
     createdAt: '2023-09-01T00:00:00Z',
     stats: [
-      { label: 'Professeurs', value: '42', tone: 'primary' },
-      { label: 'Etudiants', value: '1250', tone: 'primary' },
-      { label: 'Examens/mois', value: '180', tone: 'primary' },
+      { label: 'Professeurs', value: '2', tone: 'primary' },
+      { label: 'Etudiants', value: '2', tone: 'primary' },
+      { label: 'Examens/mois', value: '2', tone: 'primary' },
     ],
   },
   {
@@ -147,13 +139,13 @@ export const establishments: Establishment[] = [
     adminName: 'Salima Chergui',
     adminEmail: 'admin@elfath.dz',
     status: 'ACTIF',
-    professorsCount: 28,
-    studentsCount: 840,
+    professorsCount: 1,
+    studentsCount: 2,
     createdAt: '2024-01-15T00:00:00Z',
     stats: [
-      { label: 'Professeurs', value: '28', tone: 'primary' },
-      { label: 'Etudiants', value: '840', tone: 'primary' },
-      { label: 'Examens/mois', value: '95', tone: 'primary' },
+      { label: 'Professeurs', value: '1', tone: 'primary' },
+      { label: 'Etudiants', value: '2', tone: 'primary' },
+      { label: 'Examens/mois', value: '2', tone: 'primary' },
     ],
   },
   {
@@ -186,6 +178,7 @@ export const exams: Exam[] = [
     name: 'controle math 1',
     subject: 'Mathematic',
     className: 'informatique',
+    professorId: 'benali',
     date: '2026-05-20',
     copies: 8,
     status: 'ACTIF',
@@ -197,6 +190,7 @@ export const exams: Exam[] = [
     name: 'francais',
     subject: 'francais',
     className: '2 eme annees gestion',
+    professorId: 'amrani',
     date: '2026-05-25',
     copies: 5,
     status: 'BROUILLON',
@@ -208,6 +202,7 @@ export const exams: Exam[] = [
     name: 'Mathematic',
     subject: 'Mathematic',
     className: 'Aucune classe',
+    professorId: 'benali',
     date: '2026-05-24',
     copies: 0,
     status: 'EN COURS',
@@ -219,6 +214,7 @@ export const exams: Exam[] = [
     name: 'Mathematic',
     subject: 'Mathematic',
     className: '2 eme annees gestion, 1 er annee dev',
+    professorId: 'amrani',
     date: '2026-05-24',
     copies: 0,
     status: 'BROUILLON',
@@ -238,9 +234,9 @@ export const professors: Professor[] = [
     establishment: 'Lycee Ibn Khaldoun',
     establishmentId: 'est-1',
     stats: [
-      { label: 'Classes', value: '3', tone: 'primary' },
-      { label: 'Examens', value: '12', tone: 'primary' },
-      { label: 'Etudiants', value: '84', tone: 'primary' },
+      { label: 'Classes', value: '2', tone: 'primary' },
+      { label: 'Examens', value: '2', tone: 'primary' },
+      { label: 'Etudiants', value: '2', tone: 'primary' },
     ],
   },
   {
@@ -253,9 +249,9 @@ export const professors: Professor[] = [
     establishment: 'Lycee Ibn Khaldoun',
     establishmentId: 'est-1',
     stats: [
-      { label: 'Classes', value: '2', tone: 'primary' },
-      { label: 'Examens', value: '8', tone: 'primary' },
-      { label: 'Etudiants', value: '63', tone: 'primary' },
+      { label: 'Classes', value: '0', tone: 'primary' },
+      { label: 'Examens', value: '0', tone: 'primary' },
+      { label: 'Etudiants', value: '0', tone: 'primary' },
     ],
   },
   {
@@ -269,8 +265,8 @@ export const professors: Professor[] = [
     establishmentId: 'est-2',
     stats: [
       { label: 'Classes', value: '1', tone: 'primary' },
-      { label: 'Examens', value: '4', tone: 'primary' },
-      { label: 'Etudiants', value: '27', tone: 'primary' },
+      { label: 'Examens', value: '2', tone: 'primary' },
+      { label: 'Etudiants', value: '2', tone: 'primary' },
     ],
   },
   {
@@ -288,40 +284,6 @@ export const professors: Professor[] = [
       { label: 'Etudiants', value: '0', tone: 'primary' },
     ],
   },
-];
-
-export const studentExams: StudentExam[] = [
-  { id: 'math-s2', title: 'Mathematiques S2', date: '25 mai 2025', status: 'A VENIR', tone: 'warning' },
-  { id: 'pc', title: 'Physique Chimie', date: '11 mai 2025', score: '8/20', tone: 'warning' },
-  { id: 'svt', title: 'SVT', date: '5 mai 2025', score: '16/20', tone: 'success' },
-];
-
-export const recentResults: StudentExam[] = [
-  { id: 'math', title: 'Mathematiques', date: '15 mai 2025', score: '16/20', tone: 'success' },
-  { id: 'physique', title: 'Physique', date: '10 mai 2025', score: '16/20', tone: 'danger' },
-  { id: 'svt', title: 'SVT', date: '10 mai 2025', score: '16/20', tone: 'success' },
-];
-
-export const reportRows: ReportRow[] = [
-  { subject: 'Maths', score: '16/20', mention: 'Bien' },
-  { subject: 'Physique', score: '8/20', mention: 'Insuf' },
-  { subject: 'SVT', score: '18/20', mention: 'TB' },
-  { subject: 'Moyenne', score: '14.5/20', mention: '' },
-];
-
-export const examClassScores: ExamClassScore[] = [
-  { examId: 'controle-1', examName: 'Controle Math 1', className: '2 eme annee DEV', averageScore: 14 },
-  { examId: 'controle-1', examName: 'Controle Math 1', className: '2 eme annees gestion', averageScore: 11 },
-  { examId: 'controle-1', examName: 'Controle Math 1', className: '2 annee mobile', averageScore: 8 },
-  { examId: 'francais', examName: 'Francais', className: '2 eme annee DEV', averageScore: 10 },
-  { examId: 'francais', examName: 'Francais', className: '2 eme annees gestion', averageScore: 15 },
-  { examId: 'francais', examName: 'Francais', className: '2 annee mobile', averageScore: 12 },
-  { examId: 'math-2', examName: 'Mathematic 2', className: '2 eme annee DEV', averageScore: 16 },
-  { examId: 'math-2', examName: 'Mathematic 2', className: '2 eme annees gestion', averageScore: 9 },
-  { examId: 'math-2', examName: 'Mathematic 2', className: '2 annee mobile', averageScore: 13 },
-  { examId: 'math-3', examName: 'Mathematic 3', className: '2 eme annee DEV', averageScore: 7 },
-  { examId: 'math-3', examName: 'Mathematic 3', className: '2 eme annees gestion', averageScore: 13 },
-  { examId: 'math-3', examName: 'Mathematic 3', className: '2 annee mobile', averageScore: 10 },
 ];
 
 export const adminTabs: NavItem[] = [

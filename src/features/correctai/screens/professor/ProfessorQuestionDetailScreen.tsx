@@ -2,7 +2,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
 import { Card, FormActions, Icon, Icons, InfoRow, ScreenFrame } from '@/features/correctai/components/ui';
-import { exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import {
   answerSheetChoices,
@@ -46,7 +47,7 @@ export function ProfessorQuestionDetailScreen({
   selectedExam,
   selectedQuestionNumber,
 }: ProfessorScreenProps) {
-  const exam = selectedExam ?? exams[0] ?? null;
+  const exam = selectedExam ?? null;
   const questionNumber = selectedQuestionNumber ?? 1;
   const questionBank = useMemo(() => resolveQuestionBank(exam), [exam]);
   const question = questionBank.find((item) => item.number === questionNumber) ?? questionBank[0] ?? null;

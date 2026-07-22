@@ -1,10 +1,11 @@
 import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, Field, Icon, Icons, PrimaryButton, ScreenFrame } from '@/features/correctai/components/ui';
-import { classes, students } from '@/features/correctai/data/mock-data';
+import { Card, Icon, Icons, PrimaryButton, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
-import { emailPattern, validateStudentForm, type ProfessorScreenProps, type StudentFormErrors, type StudentFormValues } from './shared';
+import { validateStudentForm, type ProfessorScreenProps, type StudentFormErrors, type StudentFormValues } from './shared';
 import { StudentFormField } from './shared-components';
 
 const { colors, spacing, radius } = correctAiTheme;
@@ -17,16 +18,14 @@ export function ProfessorAddStudentScreen({
   selectedClass,
   previousScreen,
 }: ProfessorScreenProps) {
-  const classList = classesData ?? classes;
-  const studentList = studentsData ?? students;
+  const classList = classesData ?? [];
+  const studentList = studentsData ?? [];
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [matricule, setMatricule] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [selectedClasses, setSelectedClasses] = useState<string[]>(
-    selectedClass ? [selectedClass.id] : []
-  );
+  const [selectedClasses, setSelectedClasses] = useState<string[]>([]);
   const [formErrors, setFormErrors] = useState<StudentFormErrors>({});
 
   const toggleClass = (classId: string) => {
@@ -41,10 +40,6 @@ export function ProfessorAddStudentScreen({
       { existingStudents: studentList },
     );
 
-    if (selectedClasses.length === 0) {
-      nextErrors.firstName = nextErrors.firstName || 'Sélectionnez au moins une classe.';
-    }
-
     setFormErrors(nextErrors);
 
     if (Object.keys(nextErrors).length > 0) {
@@ -56,7 +51,8 @@ export function ProfessorAddStudentScreen({
       matricule: matricule.trim(),
       email: email.trim().toLowerCase(),
       password,
-      classes: [...selectedClasses],
+      classes: selectedClasses.map((id) => classList.find((c) => c.id === id)?.name ?? id),
+      classIds: [...selectedClasses],
     });
     
     if (previousScreen === 'professor-class-detail') {
@@ -107,10 +103,9 @@ export function ProfessorAddStudentScreen({
             autoCorrect={false}
             keyboardType="email-address"
           />
-          <StudentFormField
+          <SecureField
             label="Password *"
             error={formErrors.password}
-            secureTextEntry
             value={password}
             onChangeText={setPassword}
             autoCapitalize="none"
@@ -123,43 +118,54 @@ export function ProfessorAddStudentScreen({
           style={styles.classSelectCard}
           title={`Classes (${selectedClasses.length})`}
           subtitle="Selection multiple">
-          <FlatList
-            data={classList}
-            extraData={selectedClasses}
-            keyExtractor={(item) => item.id}
-            keyboardShouldPersistTaps="handled"
-            scrollEnabled={false}
-            renderItem={({ item }) => {
-              const selected = selectedClasses.includes(item.id);
-              return (
-                <Pressable
-                  accessibilityRole="checkbox"
-                  accessibilityState={{ checked: selected }}
-                  onPress={() => toggleClass(item.id)}
-                  style={({ pressed }) => [
-                    styles.classSelectRow,
-                    selected && styles.classSelectRowSelected,
-                    pressed && styles.pressed,
-                  ]}>
-                  <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
-                    {selected ? <Icon name={Icons.check} color={colors.card} size={14} /> : null}
-                  </View>
-                  <View style={styles.classSelectRowText}>
-                    <Text numberOfLines={1} style={styles.classSelectTitle}>
-                      {item.name}
-                    </Text>
-                    <Text style={styles.classSelectSubtitle}>
-                      {item.students} etudiants - {item.exams} examens
-                    </Text>
-                  </View>
-                </Pressable>
-              );
-            }}
-            showsVerticalScrollIndicator={false}
-            style={styles.classSelectList}
-            contentContainerStyle={styles.classSelectListContent}
-            ItemSeparatorComponent={() => <View style={styles.classSelectSeparator} />}
-          />
+          {classList.length === 0 ? (
+            <View style={styles.emptyClassContainer}>
+              <Text style={styles.emptyClassText}>
+                Aucune classe disponible.{'\n'}Creez une classe d'abord ou continuez sans en assigner.
+              </Text>
+              <PrimaryButton icon={Icons.plus} onPress={() => onNavigate('professor-classes')} variant="soft">
+                Creer une classe
+              </PrimaryButton>
+            </View>
+          ) : (
+            <FlatList
+              data={classList}
+              extraData={selectedClasses}
+              keyExtractor={(item) => item.id}
+              keyboardShouldPersistTaps="handled"
+              scrollEnabled={false}
+              renderItem={({ item }) => {
+                const selected = selectedClasses.includes(item.id);
+                return (
+                  <Pressable
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: selected }}
+                    onPress={() => toggleClass(item.id)}
+                    style={({ pressed }) => [
+                      styles.classSelectRow,
+                      selected && styles.classSelectRowSelected,
+                      pressed && styles.pressed,
+                    ]}>
+                    <View style={[styles.checkbox, selected && styles.checkboxSelected]}>
+                      {selected ? <Icon name={Icons.check} color={colors.card} size={14} /> : null}
+                    </View>
+                    <View style={styles.classSelectRowText}>
+                      <Text numberOfLines={1} style={styles.classSelectTitle}>
+                        {item.name}
+                      </Text>
+                      <Text style={styles.classSelectSubtitle}>
+                        {item.students} etudiants - {item.exams} examens
+                      </Text>
+                    </View>
+                  </Pressable>
+                );
+              }}
+              showsVerticalScrollIndicator={false}
+              style={styles.classSelectList}
+              contentContainerStyle={styles.classSelectListContent}
+              ItemSeparatorComponent={() => <View style={styles.classSelectSeparator} />}
+            />
+          )}
         </Card>
 
         <View style={styles.form}>
@@ -181,6 +187,18 @@ const styles = StyleSheet.create({
   studentFormInput: { marginBottom: 0 },
   studentFormInputError: { borderColor: colors.danger },
   studentFormError: { color: colors.danger, fontSize: 12, fontWeight: '700' },
+  emptyClassContainer: {
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingVertical: spacing.lg,
+  },
+  emptyClassText: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: '600',
+    textAlign: 'center',
+    lineHeight: 20,
+  },
   editStudentPage: {
     gap: spacing.md,
     paddingBottom: spacing.xl,

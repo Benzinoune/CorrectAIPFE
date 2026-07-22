@@ -13,7 +13,8 @@ import {
 import DateTimePicker from '@react-native-community/datetimepicker';
 
 import { Card, Field, FormActions, Icon, Icons, ScreenFrame } from '@/features/correctai/components/ui';
-import { classes, exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { Exam, ResponseSheetId } from '@/features/correctai/types';
 import {
@@ -239,8 +240,8 @@ function ResponseSheetPickerModal({
 }
 
 export function ProfessorNewExamScreen({ classesData, examsData, selectedExam, selectedClass, onCreateExam, onUpdateExam, onNavigate, previousScreen }: ProfessorScreenProps) {
-  const classList = classesData ?? classes;
-  const examList = examsData ?? exams;
+  const classList = classesData ?? [];
+  const examList = examsData ?? [];
   const [examName, setExamName] = useState(selectedExam?.name ?? '');
   const [subjectName, setSubjectName] = useState(selectedExam?.subject ?? '');
   const [responseSheetId, setResponseSheetId] = useState<ResponseSheetId>(selectedExam?.responseSheetId ?? '20');

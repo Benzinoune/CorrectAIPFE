@@ -9,7 +9,8 @@ import {
 } from 'react-native';
 
 import { Card, Icon, Icons, PrimaryButton, ScreenFrame } from '@/features/correctai/components/ui';
-import { exams } from '@/features/correctai/data/mock-data';
+
+
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { Exam, ExamQuestion } from '@/features/correctai/types';
 import {
@@ -181,7 +182,7 @@ export function ProfessorAnswerKeyScreen({
   onSetScannerMode,
   selectedExam,
 }: ProfessorScreenProps) {
-  const exam = selectedExam ?? exams[0] ?? null;
+  const exam = selectedExam ?? null;
   const [pointsModalVisible, setPointsModalVisible] = useState(false);
 
   const questionBank = useMemo(() => resolveQuestionBank(exam), [exam]);

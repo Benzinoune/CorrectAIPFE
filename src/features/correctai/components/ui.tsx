@@ -1,5 +1,6 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar } from 'expo-status-bar';
+import { useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import {
   Pressable,
@@ -70,6 +71,8 @@ export const Icons = {
   folder: makeIcon('folder-outline'),
   filter: makeIcon('funnel-outline'),
   logout: makeIcon('log-out-outline'),
+  eye: makeIcon('eye-outline'),
+  eyeOff: makeIcon('eye-off-outline'),
 };
 
 const { colors, radius, spacing } = correctAiTheme;
@@ -536,6 +539,38 @@ export function Field({
         selectionColor={colors.primary}
         {...props}
       />
+    </View>
+  );
+}
+
+export function SecureField({
+  label,
+  style,
+  value,
+  error,
+  ...props
+}: TextInputProps & { label?: string; style?: StyleProp<TextStyle>; error?: string }) {
+  const [visible, setVisible] = useState(false);
+  return (
+    <View style={styles.fieldGroup}>
+      {label ? <Text style={styles.fieldLabel}>{label}</Text> : null}
+      <View style={styles.secureFieldRow}>
+        <TextInput
+          placeholderTextColor={colors.faint}
+          style={[styles.input, styles.secureFieldInput, style]}
+          selectionColor={colors.primary}
+          secureTextEntry={!visible}
+          value={value}
+          {...props}
+        />
+        <Pressable
+          onPress={() => setVisible((v) => !v)}
+          style={styles.secureFieldToggle}
+          hitSlop={8}>
+          <Icon name={visible ? Icons.eyeOff : Icons.eye} size={20} color={colors.muted} />
+        </Pressable>
+      </View>
+      {error ? <Text style={styles.secureFieldError}>{error}</Text> : null}
     </View>
   );
 }
@@ -1201,6 +1236,24 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 16,
     backgroundColor: colors.card,
+  },
+  secureFieldRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  secureFieldInput: {
+    flex: 1,
+    paddingRight: 44,
+  },
+  secureFieldToggle: {
+    position: 'absolute',
+    right: 8,
+    padding: 6,
+  },
+  secureFieldError: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: '600',
   },
   searchRow: {
     flexDirection: 'row',

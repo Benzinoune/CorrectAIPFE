@@ -145,6 +145,7 @@ export type Student = {
   correctAiId: string;
   establishmentId: string;
   classes: string[];
+  classIds?: string[];
 };
 
 export type StudentCreateInput = {
@@ -154,6 +155,7 @@ export type StudentCreateInput = {
   email: string;
   password: string;
   classes: string[];
+  classIds?: string[];
 };
 
 export type Admin = {
@@ -191,6 +193,7 @@ export type Exam = {
   subject: string;
   className: string;
   classIds?: string[];
+  professorId?: string;
   date: string;
   copies: number;
   status: ExamStatus;
@@ -212,6 +215,7 @@ export type ScannedCopy = {
   id: string;
   examId: string;
   examName: string;
+  studentId?: string;
   studentName: string;
   matricule: string;
   className: string;

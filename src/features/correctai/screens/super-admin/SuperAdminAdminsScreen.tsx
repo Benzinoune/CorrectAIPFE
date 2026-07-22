@@ -1,7 +1,6 @@
 import { Text, View } from 'react-native';
 
 import { Avatar, Card, FloatingButton, Icon, Icons, ScreenFrame, SectionTitle, StatusPill } from '@/features/correctai/components/ui';
-import { admins as initialAdmins } from '@/features/correctai/data/mock-data';
 import { AdminCard, SuperAdminScreenProps, statusTone, styles } from './shared';
 
 export function SuperAdminAdminsScreen({
@@ -11,8 +10,7 @@ export function SuperAdminAdminsScreen({
   onSelectAdmin,
 }: SuperAdminScreenProps) {
     if (!selectedEstablishment) return null;
-    const adminList = adminsData ?? initialAdmins;
-    const establishmentAdmins = adminList.filter((a) => a.establishmentId === selectedEstablishment.id);
+    const establishmentAdmins = (adminsData ?? []).filter((a) => a.establishmentId === selectedEstablishment.id);
 
     return (
       <ScreenFrame compactHeader onBack={() => onNavigate('super-admin-establishment-detail')} title="Admins Etablissement">

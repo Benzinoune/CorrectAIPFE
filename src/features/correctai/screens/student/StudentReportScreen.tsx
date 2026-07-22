@@ -6,10 +6,11 @@ import { Card, Icons, PrimaryButton, ScreenFrame, StatusPill } from '@/features/
 import { studentTabs } from '@/features/correctai/data/mock-data';
 import { StudentScreenProps, styles, tabPress, getStudentScannedCopy, getStudentVisibleExams } from './shared';
 
-export function StudentReportScreen({ activeTab, onNavigate, studentsData, selectedStudent, examsData }: StudentScreenProps) {
+export function StudentReportScreen({ activeTab, onNavigate, studentsData, establishmentsData, selectedStudent, examsData }: StudentScreenProps) {
   const [downloading, setDownloading] = useState(false);
   const student = selectedStudent ?? studentsData[0];
   const fullName = student.firstName && student.lastName ? `${student.firstName} ${student.lastName}` : student.initials ?? 'Etudiant';
+  const establishmentName = establishmentsData?.find((e) => e.id === student.establishmentId)?.name ?? (student.establishmentId || 'N/A');
   const reportGreeting = `Releve ${fullName}`;
 
   const correctedExams = useMemo(() => {
@@ -114,7 +115,7 @@ export function StudentReportScreen({ activeTab, onNavigate, studentsData, selec
               <div class="info-row"><span class="info-label">Étudiant :</span> <span>${fullName}</span></div>
               <div class="info-row"><span class="info-label">Matricule :</span> <span>${student.matricule ?? 'N/A'}</span></div>
               <div class="info-row"><span class="info-label">Classes :</span> <span>${student.classes?.join(', ') || 'N/A'}</span></div>
-              <div class="info-row"><span class="info-label">Établissement :</span> <span>${student.establishmentId ?? 'N/A'}</span></div>
+              <div class="info-row"><span class="info-label">Établissement :</span> <span>${establishmentName}</span></div>
             </div>
 
             <table>

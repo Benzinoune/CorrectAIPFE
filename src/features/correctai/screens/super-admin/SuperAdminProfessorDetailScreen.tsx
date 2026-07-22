@@ -50,8 +50,9 @@ export function SuperAdminProfessorDetailScreen({
           Changer statut ({status === 'ACTIF' ? 'Suspendre' : status === 'SUSPENDU' ? 'Reactivier' : 'Activer'})
         </PrimaryButton>
         <PrimaryButton icon={Icons.key} variant="outline" tone="warning" onPress={() => {
-          Alert.alert('Mot de passe reinitialise', `Le mot de passe de ${professor.name} a ete reinitialise a "changeme123".`);
-          onUpdateProfessor?.({ ...professor, password: 'changeme123' });
+          const tempPassword = `tmp-${Date.now().toString(36).slice(-6)}`;
+          Alert.alert('Mot de passe reinitialise', `Le mot de passe de ${professor.name} a ete reinitialise a "${tempPassword}".`);
+          onUpdateProfessor?.({ ...professor, password: tempPassword });
         }}>
           Reinitialiser mot de passe
         </PrimaryButton>

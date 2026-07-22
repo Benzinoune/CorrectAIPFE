@@ -1,7 +1,8 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame } from '@/features/correctai/components/ui';
+import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { isValidEmail, normalizeEmail, EMAIL_VALIDATION_MESSAGE } from '@/features/correctai/utils/validation';
 import { SuperAdminScreenProps, styles } from './shared';
 
 export function SuperAdminNewAdminScreen({ onNavigate, establishmentsData, onCreateAdmin }: SuperAdminScreenProps) {
@@ -22,6 +23,7 @@ export function SuperAdminNewAdminScreen({ onNavigate, establishmentsData, onCre
     if (!password.trim()) missing.push('Mot de passe');
     if (!selectedEst) missing.push('Etablissement');
     if (missing.length > 0) { setErrors(missing); return; }
+    if (!isValidEmail(normalizeEmail(email))) { setErrors([EMAIL_VALIDATION_MESSAGE]); return; }
     setErrors([]);
     const est = selectedEst!;
     onCreateAdmin?.({
@@ -49,7 +51,7 @@ export function SuperAdminNewAdminScreen({ onNavigate, establishmentsData, onCre
           </View>
         </View>
         <Field autoCapitalize="none" keyboardType="email-address" label="Email *" onChangeText={setEmail} value={email} />
-        <Field autoCapitalize="none" label="Mot de passe *" onChangeText={setPassword} secureTextEntry value={password} />
+        <SecureField autoCapitalize="none" label="Mot de passe *" onChangeText={setPassword} value={password} />
         {errors.length > 0 && <Text style={styles.formError}>Champs obligatoires: {errors.join(', ')}.</Text>}
         <View style={styles.pickerWrap}>
           <Text style={styles.pickerLabel}>Etablissement *</Text>

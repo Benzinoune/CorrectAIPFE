@@ -2,10 +2,9 @@ import { useCallback, useEffect } from 'react';
 import { Image, StyleSheet, Text, View } from 'react-native';
 import { StatusBar } from 'expo-status-bar';
 
-import type { AppScreen, UserRole } from '@/features/correctai/types';
+import type { AppScreen } from '@/features/correctai/types';
 
 type AuthProps = {
-  onLogin: (role: UserRole) => void;
   onNavigate: (screen: AppScreen) => void;
 };
 
