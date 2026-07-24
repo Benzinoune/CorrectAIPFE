@@ -1,12 +1,12 @@
 import { useMemo } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Card, Icons, ScreenFrame, ScoreHero, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
+import { Card, EmptyState, Icons, ScreenFrame, ScoreHero, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
 import { studentTabs } from '@/features/correctai/data/mock-data';
 import { StudentScreenProps, styles, tabPress, getStudentVisibleExams, getStudentScannedCopy, computeStudentAverage, computeExamScore } from './shared';
 
 export function StudentHomeScreen({ activeTab, onNavigate, studentsData, selectedStudent, examsData, onSelectExam }: StudentScreenProps) {
-  const student = selectedStudent ?? studentsData[0];
+  const student = selectedStudent ?? studentsData[0] ?? null;
   const greeting = student ? `Bonjour, ${student.firstName ?? student.initials}` : 'Bonjour';
   
   const studentExamsList = useMemo(() => getStudentVisibleExams(student, examsData), [student, examsData]);
@@ -58,7 +58,7 @@ export function StudentHomeScreen({ activeTab, onNavigate, studentsData, selecte
           );
         })}
         {passedExams.length === 0 && (
-          <Text style={{ textAlign: 'center', color: '#6B7280', marginVertical: 12 }}>Aucun resultat pour le moment.</Text>
+          <EmptyState icon={Icons.doc} title="Aucun résultat" subtitle="Vos résultats apparaîtront ici une fois les examens corrigés." />
         )}
       </Card>
     </ScreenFrame>

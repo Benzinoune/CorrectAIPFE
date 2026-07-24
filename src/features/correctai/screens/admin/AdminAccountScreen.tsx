@@ -14,7 +14,7 @@ type AdminScreenProps = {
 
 export function AdminAccountScreen({ activeTab, onNavigate, onLogout, adminsData, selectedAdmin }: AdminScreenProps) {
   const admin = selectedAdmin ?? adminsData[0];
-  const greeting = `Profil Admin`;
+  const greeting = `Bonjour, ${(admin?.name ?? 'Admin').split(' ')[0]}`;
 
   const handleLogout = () => {
     Alert.alert(

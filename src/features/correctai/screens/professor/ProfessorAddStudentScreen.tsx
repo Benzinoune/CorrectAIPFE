@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { Card, Icon, Icons, PrimaryButton, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { Card, Icon, Icons, PrimaryButton, ScreenFrame } from '@/features/correctai/components/ui';
 
 
 import { correctAiTheme } from '@/features/correctai/theme';
@@ -24,7 +24,6 @@ export function ProfessorAddStudentScreen({
   const [lastName, setLastName] = useState('');
   const [matricule, setMatricule] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [selectedClasses, setSelectedClasses] = useState<string[]>(
     previousScreen === 'professor-class-detail' && selectedClass ? [selectedClass.id] : [],
   );
@@ -38,7 +37,7 @@ export function ProfessorAddStudentScreen({
 
   const handleSubmit = () => {
     const nextErrors = validateStudentForm(
-      { firstName, lastName, matricule, email, password },
+      { firstName, lastName, matricule, email },
       { existingStudents: studentList },
     );
 
@@ -52,7 +51,6 @@ export function ProfessorAddStudentScreen({
       lastName: lastName.trim(),
       matricule: matricule.trim(),
       email: email.trim().toLowerCase(),
-      password,
       classes: selectedClasses.map((id) => classList.find((c) => c.id === id)?.name ?? id),
       classIds: [...selectedClasses],
     });
@@ -104,14 +102,6 @@ export function ProfessorAddStudentScreen({
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-          />
-          <SecureField
-            label="Password *"
-            error={formErrors.password}
-            value={password}
-            onChangeText={setPassword}
-            autoCapitalize="none"
-            autoCorrect={false}
           />
         </View>
 

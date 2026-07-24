@@ -8,15 +8,23 @@
     "scheme": "correctai",
     "userInterfaceStyle": "automatic",
     "ios": {
-      "icon": "./assets/expo.icon"
+      "icon": "./assets/expo.icon",
+      "bundleIdentifier": "com.correctai.app"
     },
     "android": {
+      "package": "com.correctai.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
         "backgroundImage": "./assets/images/android-icon-background.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "permissions": [
+        "android.permission.CAMERA",
+        "android.permission.READ_EXTERNAL_STORAGE",
+        "android.permission.WRITE_EXTERNAL_STORAGE"
+      ],
       "predictiveBackGestureEnabled": false
     },
     "web": {
@@ -34,9 +42,22 @@
           "resizeMode": "contain"
         }
       ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "CorrectAi a besoin d'accéder à votre caméra pour scanner les copies."
+        }
+      ],
       "expo-image",
+      [
+        "expo-file-system",
+        {
+          "isAccessMediaLocationEnabled": true
+        }
+      ],
       "@react-native-community/datetimepicker",
-      "expo-sharing"
+      "expo-sharing",
+      "expo-print"
     ],
     "experiments": {
       "reactCompiler": true

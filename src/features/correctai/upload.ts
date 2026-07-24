@@ -99,21 +99,6 @@ export async function uploadScannerMultipart({
       : guessMimeType(fileName);
 
   const normalizedFields = normalizeFields(fields);
-  const fieldSummary =
-    Object.entries(normalizedFields)
-      .map(([key, value]) => `${key}=${value}`)
-      .join('&') || 'none';
-
-  console.log(
-    '[Scanner] %s upload start url=%s file=%s size=%d mimeType=%s fieldName=%s fields=%s',
-    label,
-    requestUrl,
-    fileName,
-    fileSize,
-    mimeType,
-    fileFieldName,
-    fieldSummary,
-  );
 
   // Create a combined AbortSignal: respect the caller's signal AND apply our own timeout.
   const timeoutController = new AbortController();
@@ -141,13 +126,6 @@ export async function uploadScannerMultipart({
       sessionType: 'foreground',
       signal: combinedSignal,
     });
-
-    console.log(
-      '[Scanner] %s upload complete status=%d body=%s',
-      label,
-      response.status,
-      response.body?.substring(0, 300),
-    );
 
     return {
       status: response.status,

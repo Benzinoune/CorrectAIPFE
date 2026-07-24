@@ -1,14 +1,16 @@
 import { Alert, Text, View } from 'react-native';
 
 import { Card, Icons, InfoRow, PrimaryButton, ScreenFrame, SectionTitle } from '@/features/correctai/components/ui';
-import { superAdminTabs, superAdminUser } from '@/features/correctai/data/mock-data';
+import { superAdminTabs } from '@/features/correctai/data/mock-data';
 import { SuperAdminScreenProps } from './shared';
 
 export function SuperAdminAccountScreen({ activeTab, onNavigate, onLogout, loggedInSuperAdmin }: SuperAdminScreenProps & { onLogout: () => void }) {
-  const admin = loggedInSuperAdmin ?? superAdminUser;
-  const greeting = `Bonjour, ${admin.name.split(' ')[0]}`;
+  const adminName = loggedInSuperAdmin?.name ?? 'Super Admin';
+  const adminEmail = loggedInSuperAdmin?.email ?? '';
+  const adminCreatedAt = loggedInSuperAdmin?.createdAt ?? '';
+  const greeting = `Bonjour, ${adminName.split(' ')[0]}`;
 
-  const initials = admin.name
+  const initials = adminName
       .split(' ')
       .map((part) => part.charAt(0))
       .join('')
@@ -40,21 +42,21 @@ export function SuperAdminAccountScreen({ activeTab, onNavigate, onLogout, logge
         <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: '#10B981', alignItems: 'center', justifyContent: 'center', marginBottom: 12 }}>
           <Text style={{ fontSize: 32, fontWeight: '700', color: '#FFFFFF' }}>{initials}</Text>
         </View>
-        <Text style={{ fontSize: 24, fontWeight: '700', color: '#1F2937' }}>{admin.name}</Text>
+        <Text style={{ fontSize: 24, fontWeight: '700', color: '#1F2937' }}>{adminName}</Text>
         <Text style={{ fontSize: 14, color: '#6B7280', marginTop: 4 }}>Super Administrateur</Text>
       </View>
 
       <SectionTitle>Informations Personnelles</SectionTitle>
       <Card icon={Icons.profile} style={{ marginBottom: 24 }} title="Détails Personnels">
-        <InfoRow icon={Icons.profile} label="Nom complet" value={admin.name} />
-        <InfoRow icon={Icons.mail} label="Email" value={admin.email} />
+        <InfoRow icon={Icons.profile} label="Nom complet" value={adminName} />
+        <InfoRow icon={Icons.mail} label="Email" value={adminEmail} />
       </Card>
 
       <SectionTitle>Informations du Compte</SectionTitle>
       <Card icon={Icons.gear} style={{ marginBottom: 24 }} title="Détails du Compte">
         <InfoRow icon={Icons.shield} label="Rôle" value="Super Administrateur" />
-        <InfoRow icon={Icons.check} label="Statut" value="ACTIF" />
-        <InfoRow icon={Icons.calendar} label="Créé le" value={new Date(admin.createdAt).toLocaleDateString('fr-FR')} />
+        <InfoRow icon={Icons.check} label="Statut" value={loggedInSuperAdmin?.status ?? 'N/A'} />
+        <InfoRow icon={Icons.calendar} label="Créé le" value={adminCreatedAt ? new Date(adminCreatedAt).toLocaleDateString('fr-FR') : 'N/A'} />
       </Card>
 
       <View style={{ marginTop: 24, paddingHorizontal: 16, paddingBottom: 32 }}>

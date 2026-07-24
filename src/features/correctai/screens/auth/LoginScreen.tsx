@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 
 import {
   AuthFrame,
@@ -15,7 +15,7 @@ import { correctAiTheme } from '@/features/correctai/theme';
 import type { AppScreen } from '@/features/correctai/types';
 
 type AuthProps = {
-  onLogin: (email: string, password: string) => { success: boolean; error?: string };
+  onLogin: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   onNavigate: (screen: AppScreen) => void;
 };
 
@@ -25,8 +25,9 @@ export function LoginScreen({ onLogin, onNavigate }: AuthProps) {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
 
-  const handleLogin = () => {
+  const handleLogin = async () => {
     const normalized = normalizeEmail(email);
     if (!normalized || !password) {
       setError('Veuillez remplir tous les champs');
@@ -36,9 +37,17 @@ export function LoginScreen({ onLogin, onNavigate }: AuthProps) {
       setError(EMAIL_VALIDATION_MESSAGE);
       return;
     }
-    const result = onLogin(normalized, password);
-    if (!result.success) {
-      setError(result.error ?? 'Email ou mot de passe incorrect');
+    setLoading(true);
+    setError('');
+    try {
+      const result = await onLogin(normalized, password);
+      if (!result.success) {
+        setError(result.error ?? 'Email ou mot de passe incorrect');
+      }
+    } catch {
+      setError('Erreur réseau. Vérifiez votre connexion.');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -69,8 +78,8 @@ export function LoginScreen({ onLogin, onNavigate }: AuthProps) {
           onChangeText={handlePasswordChange}
         />
         {error ? <Text style={styles.errorText}>{error}</Text> : null}
-        <PrimaryButton icon={Icons.lock} onPress={handleLogin}>
-          Se connecter
+        <PrimaryButton icon={Icons.lock} onPress={handleLogin} disabled={loading}>
+          {loading ? <ActivityIndicator color="#fff" size="small" /> : 'Se connecter'}
         </PrimaryButton>
         <TextButton icon={Icons.key} onPress={() => onNavigate('forgot-password')}>
           Mot de passe oublie ?

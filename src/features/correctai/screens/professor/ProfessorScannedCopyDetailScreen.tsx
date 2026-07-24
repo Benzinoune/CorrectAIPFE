@@ -71,24 +71,8 @@ export function ProfessorScannedCopyDetailScreen({
 
   useEffect(() => {
     if (!copy) {
-      console.log('[CopyDetail] render state: no copy selected');
       return;
     }
-
-    console.log(
-      '[CopyDetail] loaded persisted copy: copyId=%s examId=%s examName=%s student=%s matricule=%s class=%s score=%s scannedAt=%s hasAnnotated=%s hasOCR=%s hasOMR=%s',
-      copy.id,
-      copy.examId,
-      copy.examName,
-      copy.studentName,
-      copy.matricule,
-      copy.className,
-      copy.calculatedScore ?? '--',
-      copy.scannedAt,
-      Boolean(copy.annotatedImageUri),
-      Boolean(copy.ocrResult),
-      Boolean(copy.omrResult),
-    );
   }, [copy]);
 
   const correctionSummary = useMemo(() => (exam && copy ? buildCopyCorrectionSummary(exam, copy) : null), [copy, exam]);

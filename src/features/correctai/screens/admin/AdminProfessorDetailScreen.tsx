@@ -4,6 +4,7 @@ import { Alert, StyleSheet, Text, View } from 'react-native';
 import {
   Avatar,
   Card,
+  EmptyState,
   Icons,
   InfoRow,
   PrimaryButton,
@@ -33,7 +34,13 @@ function statusTone(status: ProfessorStatus): Tone {
 
 export function AdminProfessorDetailScreen({ onNavigate, onUpdateProfessor, onDeleteProfessor, selectedProfessor }: AdminScreenProps) {
   const professor = selectedProfessor;
-  if (!professor) return null;
+  if (!professor) {
+    return (
+      <ScreenFrame compactHeader onBack={() => onNavigate('admin-professors')} title="Détails Professeur">
+        <EmptyState icon={Icons.profile} title="Aucun professeur" subtitle="Sélectionnez un professeur pour voir ses détails." />
+      </ScreenFrame>
+    );
+  }
   const [status, setStatus] = useState<ProfessorStatus>(professor.status);
 
   const cycleStatus = () => {
@@ -60,7 +67,6 @@ export function AdminProfessorDetailScreen({ onNavigate, onUpdateProfessor, onDe
 
       <Card icon={Icons.lock} style={styles.credentialsCard} title="Compte professeur" subtitle="Identifiants de connexion">
         <InfoRow icon={Icons.mail} label="Email" value={professor.email} />
-        <InfoRow icon={Icons.lock} label="Password" value={professor.password ? '••••••••' : 'Non defini'} />
       </Card>
 
       <StatGrid items={professor.stats} />

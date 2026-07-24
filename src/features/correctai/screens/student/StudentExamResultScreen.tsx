@@ -1,10 +1,10 @@
 import { Text, View } from 'react-native';
 
-import { Card, Icon, Icons, ScreenFrame, SectionTitle, StatusPill } from '@/features/correctai/components/ui';
+import { EmptyState, Card, Icon, Icons, ScreenFrame, SectionTitle, StatusPill } from '@/features/correctai/components/ui';
 import { StudentScreenProps, styles, getStudentScannedCopy, answersMatchMulti, formatCorrectAnswers, computeExamScore } from './shared';
 
 export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStudent, studentsData }: StudentScreenProps) {
-  const student = selectedStudent ?? studentsData[0];
+  const student = selectedStudent ?? studentsData[0] ?? null;
   const examTitle = selectedExam ? selectedExam.name : 'Examen inconnu';
   
   const copy = getStudentScannedCopy(selectedExam, student);
@@ -15,20 +15,10 @@ export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStud
   const hasRealScore = copy?.calculatedScore && copy.calculatedScore !== '--' && copy.calculatedScore.includes('/');
   const isCorrected = copy && (copy.reviewStatus === 'CORRECTED' || hasRealScore);
 
-  console.log('[Student] StudentExamResultScreen: exam=%s copy=%s reviewStatus=%s score=%s isCorrected=%s',
-    selectedExam?.name ?? 'none',
-    copy?.id ?? 'none',
-    copy?.reviewStatus ?? 'none',
-    copy?.calculatedScore ?? 'none',
-    String(!!isCorrected)
-  );
-
   if (!selectedExam) {
     return (
       <ScreenFrame compactHeader onBack={() => onNavigate('student-exams')} title={examTitle}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 }}>
-          <Text style={{ color: '#6B7280', fontSize: 16 }}>Aucun examen sélectionné.</Text>
-        </View>
+        <EmptyState icon={Icons.search} title="Aucun examen sélectionné" subtitle="Sélectionnez un examen pour voir les résultats." />
       </ScreenFrame>
     );
   }
@@ -36,11 +26,7 @@ export function StudentExamResultScreen({ onNavigate, selectedExam, selectedStud
   if (!isCorrected) {
     return (
       <ScreenFrame compactHeader onBack={() => onNavigate('student-exams')} title={examTitle}>
-        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center', paddingVertical: 64 }}>
-          <Icon name={Icons.calendar} color="#9CA3AF" size={48} />
-          <Text style={{ color: '#4B5563', fontSize: 18, fontWeight: '700', marginTop: 16 }}>En attente de correction</Text>
-          <Text style={{ color: '#6B7280', fontSize: 14, textAlign: 'center', marginTop: 8 }}>Votre copie n'a pas encore été corrigée par le professeur.</Text>
-        </View>
+        <EmptyState icon={Icons.calendar} title="En attente de correction" subtitle="Votre copie n'a pas encore été corrigée par le professeur." />
       </ScreenFrame>
     );
   }

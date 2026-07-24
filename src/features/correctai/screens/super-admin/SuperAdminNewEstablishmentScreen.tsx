@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { Field, FormActions, ScreenFrame } from '@/features/correctai/components/ui';
 import { isValidEmail, normalizeEmail, EMAIL_VALIDATION_MESSAGE } from '@/features/correctai/utils/validation';
 import { SuperAdminScreenProps, styles } from './shared';
 
@@ -11,8 +11,8 @@ export function SuperAdminNewEstablishmentScreen({ onNavigate, onCreateEstablish
   const [adminFirst, setAdminFirst] = useState('');
   const [adminLast, setAdminLast] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const submit = () => {
     const missing: string[] = [];
@@ -21,19 +21,19 @@ export function SuperAdminNewEstablishmentScreen({ onNavigate, onCreateEstablish
     if (!adminFirst.trim()) missing.push('Prenom admin');
     if (!adminLast.trim()) missing.push('Nom admin');
     if (!email.trim()) missing.push('Email');
-    if (!password.trim()) missing.push('Mot de passe');
     if (missing.length > 0) {
       setErrors(missing);
       return;
     }
     if (!isValidEmail(normalizeEmail(email))) { setErrors([EMAIL_VALIDATION_MESSAGE]); return; }
+    if (submitting) return;
     setErrors([]);
+    setSubmitting(true);
     onCreateEstablishment?.({
       name: name.trim(),
       city: city.trim(),
       adminName: `${adminFirst.trim()} ${adminLast.trim()}`,
       adminEmail: email.trim().toLowerCase(),
-      adminPassword: password,
     });
     onNavigate('super-admin-establishments');
   };
@@ -52,10 +52,8 @@ export function SuperAdminNewEstablishmentScreen({ onNavigate, onCreateEstablish
           </View>
         </View>
         <Field autoCapitalize="none" keyboardType="email-address" label="Email de l'admin *" onChangeText={setEmail} value={email} />
-        <SecureField autoCapitalize="none" label="Mot de passe provisoire *" onChangeText={setPassword} value={password} />
-        <Text style={styles.formHint}>L'administrateur pourra changer son mot de passe par la suite.</Text>
         {errors.length > 0 && <Text style={styles.formError}>Veuillez remplir les champs: {errors.join(', ')}.</Text>}
-        <FormActions onCancel={() => onNavigate('super-admin-establishments')} submitLabel="Creer l'etablissement" onSubmit={submit} />
+        <FormActions onCancel={() => onNavigate('super-admin-establishments')} submitLabel="Creer l'etablissement" onSubmit={submit} submitting={submitting} />
       </View>
     </ScreenFrame>
   );

@@ -1,11 +1,11 @@
 import { Pressable, Text, View } from 'react-native';
 
-import { Card, Icons, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
+import { Card, EmptyState, Icons, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
 import { studentTabs } from '@/features/correctai/data/mock-data';
 import { StudentScreenProps, styles, tabPress, getStudentVisibleExams, getStudentScannedCopy, computeExamScore } from './shared';
 
 export function StudentExamsScreen({ activeTab, onNavigate, studentsData, selectedStudent, examsData, onSelectExam }: StudentScreenProps) {
-  const student = selectedStudent ?? studentsData[0];
+  const student = selectedStudent ?? studentsData[0] ?? null;
   const visibleExams = getStudentVisibleExams(student, examsData);
   return (
     <ScreenFrame
@@ -40,7 +40,7 @@ export function StudentExamsScreen({ activeTab, onNavigate, studentsData, select
           );
         })}
         {visibleExams.length === 0 && (
-          <Text style={{ textAlign: 'center', color: '#6B7280', marginVertical: 32 }}>Aucun examen disponible pour votre classe.</Text>
+          <EmptyState icon={Icons.search} title="Aucun examen" subtitle="Aucun examen disponible pour votre classe." />
         )}
       </View>
     </ScreenFrame>

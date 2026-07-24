@@ -23,6 +23,8 @@ Detection strategy (tried in order until one succeeds):
 Debug images are ALWAYS saved to backend-ai/debug/.
 """
 
+import logging
+import os
 import time
 import traceback
 from dataclasses import dataclass
@@ -31,6 +33,8 @@ from typing import Optional
 
 import cv2
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -57,15 +61,18 @@ class DetectionResult:
 # ---------------------------------------------------------------------------
 
 _DEBUG_DIR = Path(__file__).resolve().parent.parent / "debug"
+_DEBUG_ENABLED = os.getenv("CORRECTAI_DEBUG", "false").lower() == "true"
 
 
 def _debug_save(name: str, image: np.ndarray) -> None:
-    """Always save debug images unconditionally."""
+    """Save debug images only when CORRECTAI_DEBUG=true."""
+    if not _DEBUG_ENABLED:
+        return
     try:
         _DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         path = str(_DEBUG_DIR / name)
         cv2.imwrite(path, image)
-        print(f"[corner_debug] saved {path}  shape={image.shape}")
+        logger.debug("saved %s shape=%s", path, image.shape)
     except Exception as exc:
         print(f"[corner_debug] WARN: could not save {name}: {exc}")
 

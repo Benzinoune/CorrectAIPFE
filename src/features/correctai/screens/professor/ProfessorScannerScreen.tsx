@@ -22,7 +22,7 @@ type CornerPoint = { x: number; y: number };
 type ScannerProps = {
   activeTab?: string;
   onNavigate?: (screen: AppScreen) => void;
-  onRegisterAnswerKeyScan?: () => void;
+  onRegisterAnswerKeyScan?: (detectedAnswers: string[]) => void;
   onRegisterExamScan?: (draft?: ScannedCopyDraft) => ScannedCopy | null;
   scannerMode?: 'copies' | 'key';
   selectedExam?: { questions?: number } | null;
@@ -244,17 +244,8 @@ type CornerValidation = {
 };
 
 function validateCorners(corners: CornerPoint[], snapshotWidth: number, snapshotHeight: number): CornerValidation {
-  console.log(
-    '[Scanner] validateCorners: start snapshotWidth=%d snapshotHeight=%d corners=%d',
-    snapshotWidth,
-    snapshotHeight,
-    corners.length,
-  );
-
   if (corners.length !== 4) {
-    console.log('[Scanner] validateCorners: rule cornersCount -> FAIL (need exactly 4 corners)');
     const result = { valid: false, score: 0, reason: 'Need exactly 4 corners' };
-    console.log('[Scanner] validateCorners: final result valid=%s score=%d reason=%s', result.valid, result.score, result.reason);
     return result;
   }
 
@@ -268,65 +259,22 @@ function validateCorners(corners: CornerPoint[], snapshotWidth: number, snapshot
   const normalizedRatio = normalizedDocumentAspectRatio(corners);
   const ratioDeviation = Math.abs(normalizedRatio - A4_RATIO) / A4_RATIO;
 
-  console.log(
-    '[Scanner] validateCorners: corners=%s',
-    JSON.stringify(corners),
-  );
 
-  console.log(
-    '[Scanner] validateCorners: frame choice native=%dx%d nativeInside=%s swapped=%dx%d swappedInside=%s selected=%s %dx%d',
-    snapshotWidth,
-    snapshotHeight,
-    frameChoice.nativeInside,
-    snapshotHeight,
-    snapshotWidth,
-    frameChoice.swappedInside,
-    frameChoice.orientation,
-    frameChoice.width,
-    frameChoice.height,
-  );
-
-  console.log(
-    '[Scanner] validateCorners: document metrics width=%s height=%s boundingWidth=%d boundingHeight=%d area=%d frameArea=%d areaPct=%s rawRatio=%s normalizedRatio=%s ratioDeviation=%s',
-    documentWidth.toFixed(1),
-    documentHeight.toFixed(1),
-    Math.round(boundingWidth),
-    Math.round(boundingHeight),
-    Math.round(area),
-    Math.round(frameArea),
-    (areaRatio * 100).toFixed(2),
-    rawRatio.toFixed(4),
-    normalizedRatio.toFixed(4),
-    ratioDeviation.toFixed(4),
-  );
-
-  console.log(
-    '[Scanner] validateCorners: rule cornersCount -> PASS (count=%d)',
-    corners.length,
-  );
 
   if (areaRatio < MIN_VALID_AREA_RATIO) {
     const result = { valid: false, score: Math.round(areaRatio / MIN_VALID_AREA_RATIO * 20), reason: 'Document too small' };
-    console.log('[Scanner] validateCorners: rule areaMinimum -> FAIL (areaPct=%s minPct=%s)', (areaRatio * 100).toFixed(2), (MIN_VALID_AREA_RATIO * 100).toFixed(2));
-    console.log('[Scanner] validateCorners: final result valid=%s score=%d reason=%s', result.valid, result.score, result.reason);
     return result;
   }
-  console.log('[Scanner] validateCorners: rule areaMinimum -> PASS (areaPct=%s minPct=%s)', (areaRatio * 100).toFixed(2), (MIN_VALID_AREA_RATIO * 100).toFixed(2));
 
   if (ratioDeviation > MAX_RATIO_DEVIATION) {
-    console.log('[Scanner] validateCorners: rule aspectRatio -> WARN (deviation=%s max=%s)', ratioDeviation.toFixed(4), MAX_RATIO_DEVIATION.toFixed(4));
   } else {
-    console.log('[Scanner] validateCorners: rule aspectRatio -> PASS (deviation=%s max=%s)', ratioDeviation.toFixed(4), MAX_RATIO_DEVIATION.toFixed(4));
   }
 
   const allInside = cornersWithinFrame(corners, frameChoice.width, frameChoice.height);
   if (!allInside) {
     const result = { valid: false, score: 10, reason: 'Corners outside frame' };
-    console.log('[Scanner] validateCorners: rule frameBounds -> FAIL (selectedFrame=%dx%d)', frameChoice.width, frameChoice.height);
-    console.log('[Scanner] validateCorners: final result valid=%s score=%d reason=%s', result.valid, result.score, result.reason);
     return result;
   }
-  console.log('[Scanner] validateCorners: rule frameBounds -> PASS (selectedFrame=%dx%d)', frameChoice.width, frameChoice.height);
 
   /* -------- Confidence scoring -------- */
   const ratioScore = Math.round(Math.max(0, 1 - Math.min(ratioDeviation / 1.5, 1)) * 40);
@@ -334,8 +282,6 @@ function validateCorners(corners: CornerPoint[], snapshotWidth: number, snapshot
 
   const score = Math.min(ratioScore + areaScore, 70);
   const result = { valid: true, score, reason: '' };
-  console.log('[Scanner] validateCorners: final result valid=%s score=%d reason=%s', result.valid, result.score, result.reason || 'none');
-
   return result;
 }
 
@@ -401,20 +347,13 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
   isCapturingRef.current = isCapturing;
   scanResultVisibleRef.current = scanResultVisible;
-
-  console.log('[Scanner] Render: isAligned=%s isStable=%s isCapturing=%s canAutoCapture=%s canManualCapture=%s',
-    isAligned, isStable, isCapturing, canAutoCapture, canManualCapture);
-
   useEffect(() => {
-    console.log('[Scanner] scanResultVisible changed to:', scanResultVisible);
   }, [scanResultVisible]);
 
   useEffect(() => {
-    console.log('[Scanner] Alignment state changed: isAligned=%s', isAligned);
   }, [isAligned]);
 
   useEffect(() => {
-    console.log('[Scanner] Stability state changed: isStable=%s', isStable);
   }, [isStable]);
 
   const configurePictureSizes = useCallback(async () => {
@@ -424,12 +363,10 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
     const camera = cameraRef.current;
     if (!camera) {
-      console.log('[Scanner] Picture size probe skipped: cameraRef.current is null');
       return;
     }
 
     if (cameraDimensions.width <= 0 || cameraDimensions.height <= 0) {
-      console.log('[Scanner] Picture size probe deferred until camera layout is measured');
       return;
     }
 
@@ -443,7 +380,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
         selectPictureSize(availableSizes, cameraDimensions.width, cameraDimensions.height, false);
 
       if (!detectionSize && !captureSize) {
-        console.log('[Scanner] Camera picture size probe returned no sizes');
         return;
       }
 
@@ -451,38 +387,17 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       capturePictureSizeRef.current = captureSize;
       pictureSizesLoadedRef.current = true;
       setCameraPictureSize(detectionSize);
-
-      console.log(
-        '[Scanner] Camera picture sizes ready: detection=%s capture=%s total=%d preview=%dx%d',
-        detectionSize,
-        captureSize,
-        availableSizes.length,
-        cameraDimensions.width,
-        cameraDimensions.height,
-      );
     } catch (error) {
-      console.log(
-        '[Scanner] Camera picture size probe failed: %s',
-        error instanceof Error ? error.message : String(error),
-      );
     }
   }, [cameraDimensions.height, cameraDimensions.width]);
 
   useEffect(() => {
-    console.log(
-      '[Scanner] Permission state changed: granted=%s canAskAgain=%s status=%s',
-      permission?.granted ?? false,
-      permission?.canAskAgain ?? false,
-      permission?.status ?? 'unknown',
-    );
     if (!permission?.granted) {
-      console.log('[Scanner] Requesting camera permission');
       requestPermission();
     }
   }, [permission?.granted, requestPermission]);
 
   useEffect(() => {
-    console.log('[Scanner] Init effect fired: resetting all state');
     setIsAligned(false);
     setIsStable(false);
     setCameraReady(false);
@@ -502,15 +417,9 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   }, [isKeyMode, props.selectedExam?.questions]);
 
   useEffect(() => {
-    console.log('[Scanner] Camera readiness changed: cameraReady=%s', cameraReady);
   }, [cameraReady]);
 
   useEffect(() => {
-    console.log(
-      '[Scanner] Detection gate snapshot: cameraReady=%s permissionGranted=%s',
-      cameraReady,
-      permission?.granted ?? false,
-    );
   }, [cameraReady, permission?.granted]);
 
   useEffect(() => {
@@ -532,25 +441,12 @@ export function ProfessorScannerScreen(props: ScannerProps) {
     // Instead we cancel the previous in-flight request via AbortController and start fresh.
     // Keeping the guard only to prevent concurrent takePictureAsync calls (can crash on some devices).
     if (isDetectingRef.current) guardReasons.push('isDetecting=true (snapshot in progress)');
-
-    console.log(
-      '[Scanner] runDetection: enter cameraReady=%s permissionGranted=%s isCapturing=%s scanResultVisible=%s autoCaptureDone=%s isDetecting=%s',
-      cameraReady,
-      permission?.granted ?? false,
-      isCapturingRef.current,
-      scanResultVisibleRef.current,
-      autoCaptureDone.current,
-      isDetectingRef.current,
-    );
-
     if (guardReasons.length > 0) {
-      console.log('[Scanner] runDetection: skip -> %s', guardReasons.join(', '));
       return;
     }
 
     const camera = cameraRef.current;
     if (!camera) {
-      console.log('[Scanner] runDetection: skip -> cameraRef.current is null');
       return;
     }
 
@@ -560,9 +456,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       detectionAbortRef.current?.abort();
       const abortController = new AbortController();
       detectionAbortRef.current = abortController;
-
-      console.log('[Scanner] runDetection: detection lock acquired');
-      console.log('[Scanner] runDetection: sampling preview snapshot for detect-corners (Expo Camera fallback)');
       // Do NOT use skipProcessing:true here — on Android it bypasses EXIF orientation
       // correction so the backend receives a rotated image and corner detection fails.
       const image = await camera.takePictureAsync({
@@ -570,22 +463,8 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       });
 
       if (!image?.uri) {
-        console.log('[Scanner] runDetection: skip -> takePictureAsync returned no uri');
         return;
       }
-
-      console.log(
-        '[Scanner] runDetection: snapshot captured uri=%s snapshotWidth=%s snapshotHeight=%s',
-        image.uri,
-        image.width ?? 'unknown',
-        image.height ?? 'unknown',
-      );
-
-      console.log(
-        '[Scanner] runDetection: detect-corners request url=%s',
-        `${OCR_SERVICE_URL}/detect-corners`,
-      );
-
       const uploadResult = await uploadScannerMultipart({
         requestUrl: `${OCR_SERVICE_URL}/detect-corners`,
         imageUri: image.uri,
@@ -594,19 +473,9 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       });
 
       if (isCapturingRef.current || scanResultVisibleRef.current || autoCaptureDone.current) {
-        console.log('[Scanner] runDetection: skip -> state changed while awaiting detect-corners');
         return;
       }
-
-      console.log(
-        '[Scanner] detect-corners response: status=%d ok=%s body=%s',
-        uploadResult.status,
-        uploadResult.status === 200,
-        uploadResult.body,
-      );
-
       if (uploadResult.status !== 200) {
-        console.log('[Scanner] runDetection: skip -> non-OK status from detect-corners');
         return;
       }
 
@@ -614,7 +483,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       try {
         data = JSON.parse(uploadResult.body);
       } catch {
-        console.log('[Scanner] runDetection: skip -> invalid JSON from detect-corners');
         return;
       }
 
@@ -630,44 +498,17 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
       if (backendDetW > 0 && backendDetH > 0) {
         setDetectionBackendFrame({ width: backendDetW, height: backendDetH });
-        console.log(
-          '[Scanner] detect-corners: backend detection frame=%dx%d',
-          backendDetW, backendDetH,
-        );
       }
 
       const now = Date.now();
-      console.log(
-        '[Scanner] detect-corners parsed: detected=%s corners=%d frameWidth=%d frameHeight=%d backendDetW=%d backendDetH=%d',
-        data.detected ?? false,
-        data.corners?.length ?? 0,
-        frameWidth,
-        frameHeight,
-        backendDetW,
-        backendDetH,
-      );
-      console.log(
-        '[Scanner] detect-corners: validation frame source image=%sx%s layout=%sx%s',
-        image.width ?? 'unknown',
-        image.height ?? 'unknown',
-        cameraDimensions.width,
-        cameraDimensions.height,
-      );
-      console.log(
-        '[Scanner] detect-corners: returned corners=%s',
-        JSON.stringify(data.corners ?? []),
-      );
 
       /* -------- Run client-side validation on every detection cycle -------- */
       if (data.detected && data.corners?.length === 4) {
         const newCorners: CornerPoint[] = data.corners;
-        console.log('[Scanner] detect-corners: four corners received -> validating');
-
         const validation = validateCorners(newCorners, frameWidth, frameHeight);
 
         if (validation.valid) {
           /* -------- Valid document -------- */
-          console.log('[Scanner] detect-corners: validation passed -> updating alignment/stability');
           setDetectedCorners(newCorners);
           setStableImageUri(image.uri);
           setDetectionMessage(data.message ?? 'Document détecté');
@@ -697,19 +538,10 @@ export function ProfessorScannerScreen(props: ScannerProps) {
               }
             }
           }
-
-          console.log(
-            '[Scanner] detect-corners: stability window length=%d allMatch=%s',
-            history.length,
-            allMatch,
-          );
-
           if (allMatch) {
             const windowDuration = now - history[0].time;
-            console.log('[Scanner] detect-corners: windowDuration=%dms', windowDuration);
             if (windowDuration >= 1200) {
               if (!isStable) {
-                console.log('[Scanner] Document validated & stable – setting isStable=true, confidence=%d', validation.score);
               }
               setIsAligned(true);
               setIsStable(true);
@@ -723,7 +555,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
           }
         } else {
           /* -------- Corners exist but failed validation -------- */
-          console.log('[Scanner] Validation failed: %s (score=%d)', validation.reason, validation.score);
           if (validation.score > 0) {
             setDetectedCorners(newCorners);
             setStableImageUri(image.uri);
@@ -744,9 +575,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
         }
       } else {
         /* -------- No corners from backend -------- */
-        console.log('[Scanner] detect-corners: invalid payload or no corners detected');
         if (detectedCorners.length > 0) {
-          console.log('[Scanner] No corners detected – waiting for 3 consecutive failures before clearing state');
         }
         setDetectedCorners([]);
         setDetectionConfidence(0);
@@ -767,20 +596,14 @@ export function ProfessorScannerScreen(props: ScannerProps) {
         (error instanceof Error && error.name === 'AbortError') ||
         (error instanceof Error && error.message.includes('timed out'));
       if (!isAbort) {
-        console.log(
-          '[Scanner] runDetection: exception while processing frame: %s',
-          error instanceof Error ? error.message : String(error),
-        );
         setDetectedCorners([]);
         setDetectionConfidence(0);
         setIsAligned(false);
         setIsStable(false);
       } else {
-        console.log('[Scanner] runDetection: aborted (stale tick) – state preserved');
       }
     } finally {
       isDetectingRef.current = false;
-      console.log('[Scanner] runDetection: detection lock released');
     }
   // NOTE: detectedCorners.length intentionally removed from deps — it caused unnecessary
   // re-creation of the callback on every detection cycle (stale closure + extra re-mounts).
@@ -791,35 +614,20 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   runDetectionRef.current = runDetection;
 
   useEffect(() => {
-    console.log(
-      '[Scanner] Detection interval effect: cameraReady=%s permissionGranted=%s',
-      cameraReady,
-      permission?.granted ?? false,
-    );
     if (!permission?.granted || !cameraReady) {
-      console.log('[Scanner] Detection interval not started because gate is closed');
       return;
     }
-
-    console.log('[Scanner] Detection loop fallback: Expo Camera snapshot sampling is active in place of live frame processing');
-    console.log('[Scanner] Detection interval started: every %dms', DETECTION_INTERVAL_MS);
     const interval = setInterval(() => {
-      console.log('[Scanner] Detection interval tick -> runDetection');
       runDetectionRef.current();
     }, DETECTION_INTERVAL_MS);
     return () => {
-      console.log('[Scanner] Detection interval cleared');
       clearInterval(interval);
     };
   }, [cameraReady, permission?.granted]);
 
   const doCapture = useCallback(async () => {
-    console.log('[Scanner] doCapture called: isAligned=%s isStable=%s autoCaptureDone=%s scanResultVisible=%s',
-      isAligned, isStable, autoCaptureDone.current, scanResultVisible);
-      
     // Strict guard: NEVER allow capture (manual or auto) if not aligned and stable
     if (!isAligned || !isStable || isCapturing || autoCaptureDone.current || scanResultVisible) {
-      console.log('[Scanner] doCapture blocked by strict guard conditions');
       return;
     }
 
@@ -829,14 +637,11 @@ export function ProfessorScannerScreen(props: ScannerProps) {
 
     const camera = cameraRef.current;
     if (!camera) {
-      console.log('[Scanner] doCapture: cameraRef.current is null');
       return;
     }
 
     autoCaptureDone.current = true;
     setIsCapturing(true);
-    console.log('[Scanner] doCapture: autoCaptureDone set, isCapturing set, calling takePictureAsync...');
-
     try {
       // ── Use the exact snapshot that was verified as stable ───────────────
       // CRITICAL: We previously took a new picture here, but network latency
@@ -845,15 +650,12 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       // the new image, resulting in a bad crop.
       // Solution: use the exact same image URI that was saved during the
       // stable detection tick.
-      console.log('[Scanner] doCapture: using the exact preview-quality snapshot from the stable detection tick');
       let finalImageUri = stableImageUri;
       
       if (!finalImageUri) {
-        console.log('[Scanner] doCapture: stableImageUri is null, taking fallback picture');
         const fallbackImage = await camera.takePictureAsync({ quality: SMALL_PICTURE_QUALITY });
         finalImageUri = fallbackImage?.uri ?? null;
       }
-      console.log('[Scanner] capture image uri:', finalImageUri ? `${finalImageUri.substring(0, 50)}...` : 'null');
 
       let studentName: string | null = null;
       let matricule: string | null = null;
@@ -876,14 +678,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
         const cornersJson = JSON.stringify(
           detectedCorners.map((c) => ({ x: Math.round(c.x), y: Math.round(c.y) })),
         );
-        console.log(
-          '[Scanner] Calling /scan with pre-detected corners=%s backendFrame=%dx%d questions=%d imageUri=%s',
-          cornersJson,
-          detectionBackendFrame.width,
-          detectionBackendFrame.height,
-          questionCount,
-          finalImageUri.substring(0, 60),
-        );
 
         const scanUpload = await uploadScannerMultipart({
           requestUrl: `${OCR_SERVICE_URL}/scan`,
@@ -897,27 +691,11 @@ export function ProfessorScannerScreen(props: ScannerProps) {
             detection_image_height: detectionBackendFrame.height,
           },
         });
-
-        console.log(
-          '[Scanner] /scan response: status=%d body_length=%d',
-          scanUpload.status,
-          scanUpload.body?.length ?? 0,
-        );
-
         if (scanUpload.status === 200) {
           const scanData = JSON.parse(scanUpload.body);
-          console.log(
-            '[Scanner] /scan parsed: detected=%s ocr_extracted=%s omr_detected=%s warped_image=%s',
-            scanData.detected ?? false,
-            scanData.ocr?.extracted ?? false,
-            scanData.omr?.detected ?? false,
-            scanData.warped_image_base64 ? `${scanData.warped_image_base64.length} chars` : 'null',
-          );
-
           // If the backend returned detected=false, the perspective warp failed.
           // Do NOT show the scan result modal with a raw camera frame.
           if (!scanData.detected) {
-            console.log('[Scanner] /scan: detected=false – aborting capture, asking user to retry');
             autoCaptureDone.current = false;
             Alert.alert(
               'Repositionner la feuille',
@@ -937,9 +715,7 @@ export function ProfessorScannerScreen(props: ScannerProps) {
                 { encoding: FileSystem.EncodingType.Base64 },
               );
               warpedImageUri = warpedPath;
-              console.log('[Scanner] Warped image saved to: %s', warpedPath);
             } catch (err) {
-              console.log('[Scanner] Failed to save warped image: %s', String(err));
             }
           }
 
@@ -961,7 +737,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
                   ? ocr.missingFields
                   : [],
             };
-            console.log('[Scanner] OCR: name=%s matricule=%s class=%s', studentName, matricule, className);
           }
 
           // Parse OMR from unified response
@@ -978,33 +753,24 @@ export function ProfessorScannerScreen(props: ScannerProps) {
                 detected: Boolean(omrRaw.detected),
                 answers: parsedAnswers,
               };
-              conf = Math.round(
-                omrRaw.answers.reduce((s: number, a: any) => s + (a.confidence ?? 0), 0) /
-                  omrRaw.answers.length * 100,
-              );
-              console.log('[Scanner] OMR: %d answers, conf=%d', parsedAnswers.length, conf);
+              conf = omrRaw.answers.length > 0
+                ? Math.round(
+                    omrRaw.answers.reduce((s: number, a: any) => s + (a.confidence ?? 0), 0) /
+                      omrRaw.answers.length * 100,
+                  )
+                : 0;
             } else {
               omrResultPayload = { detected: false, answers: [] };
             }
           }
         } else {
-          console.log('[Scanner] /scan HTTP error: status=%d body=%s',
-            scanUpload.status, scanUpload.body?.substring(0, 200));
           // HTTP error from /scan – reset auto-capture so the user can retry
           autoCaptureDone.current = false;
           Alert.alert('Erreur serveur', `Le serveur a retourné une erreur (${scanUpload.status}). Réessayez.`);
           return;
         }
       } else {
-        console.log('[Scanner] Skipping /scan: finalImageUri=%s, detectedCorners.length=%d',
-          finalImageUri ? 'valid' : 'null', detectedCorners.length);
       }
-
-      console.log('[Scanner] Setting capture state: cameraFrozen=true, scanResultVisible=true');
-      console.log('[Scanner] warpedImageUri=%s rawImageUri=%s',
-        warpedImageUri ?? 'none',
-        finalImageUri?.substring(0, 60) ?? 'none',
-      );
       // Show the perspective-corrected (warped) image in the frozen preview if available.
       // Otherwise fall back to the raw camera image.
       const displayImageUri = warpedImageUri ?? finalImageUri ?? null;
@@ -1013,10 +779,14 @@ export function ProfessorScannerScreen(props: ScannerProps) {
       setScanResultVisible(true);
       setIsAligned(false);
       setIsStable(false);
-      console.log('[Scanner] Capture state set - Bottom Sheet should be visible');
 
-      console.log('[Scanner] Calling onRegisterExamScan...');
-      console.log('[Scanner] onRegisterExamScan exists:', typeof props.onRegisterExamScan);
+      if (isKeyMode) {
+        props.onRegisterAnswerKeyScan?.(answers);
+        Alert.alert('Clé enregistrée', `${answers.filter(Boolean).length} réponses correctes détectées.`);
+        props.onNavigate?.('professor-answer-key');
+        return;
+      }
+
       const createdCopy = props.onRegisterExamScan?.({
         studentName: studentName ?? 'À extraire plus tard',
         matricule: matricule ?? 'À extraire plus tard',
@@ -1032,26 +802,17 @@ export function ProfessorScannerScreen(props: ScannerProps) {
         omrResult: omrResultPayload,
         metadata: { source: 'scanner', processedAt: new Date().toISOString() },
       }) ?? null;
-      console.log('[Scanner] onRegisterExamScan returned:', createdCopy ? `id=${createdCopy.id}` : 'null');
-
       if (!createdCopy) {
-        console.log('[Scanner] No createdCopy - showing alert');
         Alert.alert('Scan impossible', "La copie n'a pas pu être enregistrée.");
       } else {
-        console.log('[Scanner] Setting capturedCopy with id=%s', createdCopy.id);
         setCapturedCopy(createdCopy);
       }
     } catch (error) {
-      console.log(
-        '[Scanner] doCapture outer catch - unexpected error: %s',
-        error instanceof Error ? error.message : String(error),
-      );
       Alert.alert('Scan impossible', "Nous n'avons pas pu capturer le document. Réessayez.");
       setIsAligned(false);
       setIsStable(false);
       autoCaptureDone.current = false;
     } finally {
-      console.log('[Scanner] doCapture finally: setIsCapturing(false)');
       setIsCapturing(false);
     }
   }, [
@@ -1070,17 +831,13 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   ]);
 
   useEffect(() => {
-    console.log('[Scanner] Auto-capture effect: canAutoCapture=%s autoCaptureDone=%s scanResultVisible=%s',
-      canAutoCapture, autoCaptureDone.current, scanResultVisible);
     if (canAutoCapture && !autoCaptureDone.current && !scanResultVisible) {
-      console.log('[Scanner] Auto-capture condition met - calling doCapture()');
       doCapture();
     }
   }, [canAutoCapture, doCapture, scanResultVisible]);
 
   const onCameraLayout = useCallback((event: any) => {
     const { width, height } = event.nativeEvent.layout;
-    console.log('[Scanner] Camera layout measured: width=%d height=%d', width, height);
     setCameraDimensions({ width, height });
   }, []);
 
@@ -1089,7 +846,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
   };
 
   const closeBottomSheet = () => {
-    console.log('[Scanner] closeBottomSheet called - resetting state');
     setScanResultVisible(false);
     setCameraFrozen(false);
     setCapturedImageUri(null);
@@ -1107,19 +863,16 @@ export function ProfessorScannerScreen(props: ScannerProps) {
     detectionFailures.current = 0;
     const detectionPictureSize = detectionPictureSizeRef.current;
     if (detectionPictureSize) {
-      console.log('[Scanner] closeBottomSheet: restoring detection pictureSize=%s', detectionPictureSize);
       setCameraPictureSize(detectionPictureSize);
     }
   };
 
   const handleReviewCopy = () => {
-    console.log('[Scanner] handleReviewCopy called - opening persisted copy detail');
     closeBottomSheet();
     props.onNavigate?.('professor-copy-detail');
   };
 
   const handleContinueAndSave = () => {
-    console.log('[Scanner] handleContinueAndSave called - closing sheet and resuming live scan');
     closeBottomSheet();
   };
 
@@ -1154,7 +907,6 @@ export function ProfessorScannerScreen(props: ScannerProps) {
               pictureSize={cameraPictureSize}
               enableTorch={torchEnabled}
               onCameraReady={() => {
-                console.log('[Scanner] Camera ready event received');
                 setCameraReady(true);
                 void configurePictureSizes();
               }}

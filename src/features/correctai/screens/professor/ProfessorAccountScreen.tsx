@@ -21,7 +21,6 @@ import {
   SectionTitle,
   StatGrid,
   TextButton,
-  SecureField,
 } from '@/features/correctai/components/ui';
 import { professorTabs } from '@/features/correctai/data/mock-data';
 import { correctAiTheme } from '@/features/correctai/theme';
@@ -159,14 +158,9 @@ export function ProfessorAccountScreen({
   const totalCopies = examList.reduce((sum, e) => sum + (e.scannedCopies?.length ?? e.copies), 0);
 
   const [editModalVisible, setEditModalVisible] = useState(false);
-  const [passwordModalVisible, setPasswordModalVisible] = useState(false);
   const [editName, setEditName] = useState(professor?.name ?? '');
   const [editEmail, setEditEmail] = useState(professor?.email ?? '');
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [newPassword, setNewPassword] = useState('');
-  const [confirmPassword, setConfirmPassword] = useState('');
   const [editError, setEditError] = useState('');
-  const [passwordError, setPasswordError] = useState('');
 
   useEffect(() => {
     if (professor) {
@@ -182,27 +176,18 @@ export function ProfessorAccountScreen({
     if (!trimmedName) { setEditError('Le nom est requis.'); return; }
     if (!trimmedEmail || !isValidEmail(trimmedEmail)) { setEditError(EMAIL_VALIDATION_MESSAGE); return; }
     setEditError('');
+    const nameParts = trimmedName.split(' ');
+    const firstName = nameParts[0] ?? trimmedName;
+    const lastName = nameParts.slice(1).join(' ') || firstName;
     onUpdateProfessor({
       ...professor,
+      firstName,
+      lastName,
       name: trimmedName,
       email: trimmedEmail,
       initials: trimmedName.split(' ').map((p) => p.charAt(0)).join('').toUpperCase().slice(0, 2) || professor.initials,
     });
     setEditModalVisible(false);
-  };
-
-  const handleChangePassword = () => {
-    if (!professor || !onUpdateProfessor) return;
-    if (!currentPassword) { setPasswordError('Mot de passe actuel requis.'); return; }
-    if (currentPassword !== professor.password) { setPasswordError('Mot de passe actuel incorrect.'); return; }
-    if (!newPassword || newPassword.length < 6) { setPasswordError('Nouveau mot de passe (min 6 caracteres).'); return; }
-    if (newPassword !== confirmPassword) { setPasswordError('Les mots de passe ne correspondent pas.'); return; }
-    setPasswordError('');
-    onUpdateProfessor({ ...professor, password: newPassword });
-    setPasswordModalVisible(false);
-    setCurrentPassword('');
-    setNewPassword('');
-    setConfirmPassword('');
   };
 
   const handleLogout = () => {
@@ -278,15 +263,6 @@ export function ProfessorAccountScreen({
           <Text style={localStyles.accountActionText}>Modifier le profil</Text>
           <Icon name={Icons.chevron} color={colors.faint} size={16} />
         </Pressable>
-        <View style={localStyles.accountActionDivider} />
-        <Pressable
-          onPress={() => { setPasswordModalVisible(true); }}
-          style={({ pressed }) => [localStyles.accountActionRow, pressed && localStyles.pressed]}>
-          <Icon name={Icons.lock} color={colors.primary} size={18} />
-          <Text style={localStyles.accountActionText}>Changer le mot de passe</Text>
-          <Icon name={Icons.chevron} color={colors.faint} size={16} />
-        </Pressable>
-        <View style={localStyles.accountActionDivider} />
         <Pressable
           onPress={handleLogout}
           style={({ pressed }) => [localStyles.accountActionRow, pressed && localStyles.pressed]}>
@@ -307,22 +283,6 @@ export function ProfessorAccountScreen({
             <View style={localStyles.modalActions}>
               <TextButton onPress={() => { setEditModalVisible(false); setEditError(''); }} tone="neutral">Annuler</TextButton>
               <PrimaryButton onPress={handleSaveProfile}>Enregistrer</PrimaryButton>
-            </View>
-          </View>
-        </View>
-      </Modal>
-
-      <Modal animationType="slide" transparent visible={passwordModalVisible} onRequestClose={() => setPasswordModalVisible(false)}>
-        <View style={localStyles.modalOverlay}>
-          <View style={localStyles.modalContent}>
-            <Text style={localStyles.modalTitle}>Changer le mot de passe</Text>
-            {passwordError ? <Text style={localStyles.modalError}>{passwordError}</Text> : null}
-            <SecureField label="Mot de passe actuel" value={currentPassword} onChangeText={setCurrentPassword} />
-            <SecureField label="Nouveau mot de passe" value={newPassword} onChangeText={setNewPassword} />
-            <SecureField label="Confirmer le mot de passe" value={confirmPassword} onChangeText={setConfirmPassword} />
-            <View style={localStyles.modalActions}>
-              <TextButton onPress={() => { setPasswordModalVisible(false); setPasswordError(''); setCurrentPassword(''); setNewPassword(''); setConfirmPassword(''); }} tone="neutral">Annuler</TextButton>
-              <PrimaryButton onPress={handleChangePassword}>Changer</PrimaryButton>
             </View>
           </View>
         </View>

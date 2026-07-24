@@ -194,16 +194,6 @@ export function ProfessorScannedCopiesListScreen({
 
   const metrics = useMemo(() => calculateReviewMetrics(exam?.scannedCopies ?? []), [exam?.scannedCopies]);
 
-  useEffect(() => {
-    console.log(
-      '[ScanHistory] render state: examId=%s copyCount=%d filter=%s sort=%s',
-      exam?.id ?? 'none',
-      exam?.scannedCopies?.length ?? 0,
-      filter,
-      sort,
-    );
-  }, [exam?.id, exam?.scannedCopies?.length, filter, sort]);
-
   if (!exam) {
     return (
       <ScreenFrame compactHeader onBack={() => onNavigate('professor-exams')} title="Copies scannées">
@@ -221,12 +211,6 @@ export function ProfessorScannedCopiesListScreen({
   }
 
   const handleCopyPress = (copy: ScannedCopy) => {
-    console.log(
-      '[ScanHistory] open copy: copyId=%s examId=%s student=%s',
-      copy.id,
-      copy.examId,
-      copy.studentName,
-    );
     onSelectScannedCopy?.(copy);
     onNavigate('professor-copy-detail');
   };

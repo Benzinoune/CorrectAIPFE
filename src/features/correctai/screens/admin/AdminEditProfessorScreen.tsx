@@ -1,7 +1,7 @@
 ﻿import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { EmptyState, Field, FormActions, Icons, ScreenFrame } from '@/features/correctai/components/ui';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { AppScreen, NavItem, Professor } from '@/features/correctai/types';
 import { isValidEmail } from '@/features/correctai/utils/validation';
@@ -36,18 +36,24 @@ export function AdminEditProfessorScreen({
   selectedProfessor,
 }: AdminScreenProps) {
   const professor = selectedProfessor;
-  if (!professor) return null;
+  if (!professor) {
+    return (
+      <ScreenFrame compactHeader onBack={() => onNavigate('admin-professors')} title="Modifier Professeur">
+        <EmptyState icon={Icons.profile} title="Aucun professeur" subtitle="Sélectionnez un professeur pour le modifier." />
+      </ScreenFrame>
+    );
+  }
 
   const { firstName: initialFirst, lastName: initialLast } = splitName(professor.name);
   const [firstName, setFirstName] = useState(initialFirst);
   const [lastName, setLastName] = useState(initialLast);
   const [email, setEmail] = useState(professor.email);
-  const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<ProfessorFormErrors>({});
+  const [submitting, setSubmitting] = useState(false);
 
   const draft = useMemo(
-    () => ({ firstName, lastName, email, password }),
-    [email, firstName, lastName, password],
+    () => ({ firstName, lastName, email }),
+    [email, firstName, lastName],
   );
 
   const validate = () => {
@@ -68,7 +74,8 @@ export function AdminEditProfessorScreen({
   };
 
   const submit = () => {
-    if (!validate()) return;
+    if (!validate() || submitting) return;
+    setSubmitting(true);
 
     const trimmedFirst = draft.firstName.trim();
     const trimmedLast = draft.lastName.trim();
@@ -76,10 +83,11 @@ export function AdminEditProfessorScreen({
 
     onUpdateProfessor?.({
       ...professor,
+      firstName: trimmedFirst,
+      lastName: trimmedLast,
       name: fullName,
       initials: buildInitials(trimmedFirst, trimmedLast),
       email: draft.email.trim().toLowerCase(),
-      ...(draft.password.trim() ? { password: draft.password } : {}),
     });
     onNavigate('admin-professor-detail');
   };
@@ -126,16 +134,6 @@ export function AdminEditProfessorScreen({
         />
         {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
-        <SecureField
-          autoCapitalize="none"
-          autoCorrect={false}
-          label="Nouveau mot de passe (optionnel)"
-          onChangeText={setPassword}
-          textContentType="newPassword"
-          value={password}
-        />
-        <Text style={styles.hintText}>Laissez vide pour conserver le mot de passe actuel.</Text>
-
         <View style={styles.fieldReadonly}>
           <Text style={styles.readonlyLabel}>Etablissement</Text>
           <Text style={styles.readonlyValue}>{professor.establishment}</Text>
@@ -146,7 +144,7 @@ export function AdminEditProfessorScreen({
           <Text style={styles.readonlyValue}>{professor.status}</Text>
         </View>
 
-        <FormActions onCancel={() => onNavigate('admin-professor-detail')} onSubmit={submit} submitLabel="Enregistrer" />
+        <FormActions onCancel={() => onNavigate('admin-professor-detail')} onSubmit={submit} submitLabel="Enregistrer" submitting={submitting} />
       </View>
     </ScreenFrame>
   );

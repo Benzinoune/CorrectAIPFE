@@ -181,7 +181,6 @@ async function getBase64Image(uri: string): Promise<string | null> {
     const mimeType = extension === 'png' ? 'image/png' : 'image/jpeg';
     return `data:${mimeType};base64,${base64}`;
   } catch (error) {
-    console.warn('[PDFReport] Failed to convert image to base64:', error);
     return null;
   }
 }

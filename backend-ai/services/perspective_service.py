@@ -8,10 +8,10 @@ flat crop of the answer sheet with NO background around it.
 
 This is the image that gets saved as the scanned copy and fed to OCR/OMR.
 
-Debug images are always saved to backend-ai/debug/warped_output.jpg so the
-warp result can be inspected after every request.
+Debug images are written to backend-ai/debug/ only when CORRECTAI_DEBUG=true.
 """
 
+import os
 from pathlib import Path
 
 import cv2
@@ -20,16 +20,18 @@ import numpy as np
 from .corner_detector import CornerPoint
 
 _DEBUG_DIR = Path(__file__).resolve().parent.parent / "debug"
+_DEBUG_ENABLED = os.getenv("CORRECTAI_DEBUG", "false").lower() == "true"
 
 
 def _debug_save(name: str, image: np.ndarray) -> None:
+    if not _DEBUG_ENABLED:
+        return
     try:
         _DEBUG_DIR.mkdir(parents=True, exist_ok=True)
         path = str(_DEBUG_DIR / name)
         cv2.imwrite(path, image)
-        print(f"[perspective_debug] saved {path}  shape={image.shape}")
-    except Exception as exc:
-        print(f"[perspective_debug] WARN: could not save {name}: {exc}")
+    except Exception:
+        pass
 
 
 def correct_perspective(

@@ -12,9 +12,7 @@ export function SplashScreen({ onNavigate }: AuthProps) {
   const continueToLogin = useCallback(() => onNavigate('login'), [onNavigate]);
 
   useEffect(() => {
-    console.log('[Splash] mounted');
     const timer = setTimeout(() => {
-      console.log('[Splash] auto-redirecting to login');
       continueToLogin();
     }, 3000);
 

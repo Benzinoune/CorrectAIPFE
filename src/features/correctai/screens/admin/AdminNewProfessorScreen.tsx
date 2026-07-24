@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { Field, FormActions, ScreenFrame } from '@/features/correctai/components/ui';
 import { correctAiTheme } from '@/features/correctai/theme';
 import type { AppScreen, NavItem, ProfessorCreateInput } from '@/features/correctai/types';
 import { isValidEmail } from '@/features/correctai/utils/validation';
@@ -23,12 +23,11 @@ export function AdminNewProfessorScreen({ adminEstablishmentId, establishmentNam
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [errors, setErrors] = useState<ProfessorFormErrors>({});
 
   const draft = useMemo(
-    () => ({ firstName, lastName, email, password }),
-    [email, firstName, lastName, password],
+    () => ({ firstName, lastName, email }),
+    [email, firstName, lastName],
   );
 
   const validate = () => {
@@ -43,22 +42,20 @@ export function AdminNewProfessorScreen({ adminEstablishmentId, establishmentNam
     if (!isValidEmail(draft.email)) {
       nextErrors.email = 'Entrez un email valide.';
     }
-    if (!draft.password.trim()) {
-      nextErrors.password = 'Le mot de passe est requis.';
-    }
 
     setErrors(nextErrors);
     return Object.keys(nextErrors).length === 0;
   };
 
+  const [submitting, setSubmitting] = useState(false);
   const submit = () => {
-    if (!validate()) return;
+    if (!validate() || submitting) return;
+    setSubmitting(true);
 
     onCreateProfessor?.({
       firstName: draft.firstName.trim(),
       lastName: draft.lastName.trim(),
       email: draft.email.trim().toLowerCase(),
-      password: draft.password,
       establishment: establishmentName,
       establishmentId: adminEstablishmentId ?? '',
     });
@@ -70,7 +67,7 @@ export function AdminNewProfessorScreen({ adminEstablishmentId, establishmentNam
       <View style={styles.form}>
         <View style={styles.formIntro}>
           <Text style={styles.formTitle}>Compte professeur</Text>
-          <Text style={styles.formHint}>Email et mot de passe seront utilises pour la connexion du professeur.</Text>
+          <Text style={styles.formHint}>L'email sera utilise pour la connexion du professeur.</Text>
         </View>
 
         <View style={styles.row}>
@@ -105,22 +102,12 @@ export function AdminNewProfessorScreen({ adminEstablishmentId, establishmentNam
         />
         {errors.email ? <Text style={styles.errorText}>{errors.email}</Text> : null}
 
-        <SecureField
-          autoCapitalize="none"
-          autoCorrect={false}
-          label="Password *"
-          onChangeText={setPassword}
-          textContentType="newPassword"
-          value={password}
-        />
-        {errors.password ? <Text style={styles.errorText}>{errors.password}</Text> : null}
-
         <View style={styles.fieldReadonly}>
           <Text style={styles.readonlyLabel}>Etablissement</Text>
           <Text style={styles.readonlyValue}>{establishmentName}</Text>
         </View>
 
-        <FormActions onCancel={() => onNavigate('admin-professors')} onSubmit={submit} submitLabel="Creer" />
+        <FormActions onCancel={() => onNavigate('admin-professors')} onSubmit={submit} submitLabel="Creer" submitting={submitting} />
       </View>
     </ScreenFrame>
   );

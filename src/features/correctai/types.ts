@@ -116,9 +116,10 @@ export type Establishment = {
 export type Professor = {
   id: string;
   initials: string;
+  firstName: string;
+  lastName: string;
   name: string;
   email: string;
-  password: string;
   status: ProfessorStatus;
   establishment: string;
   establishmentId: string;
@@ -129,7 +130,6 @@ export type ProfessorCreateInput = {
   firstName: string;
   lastName: string;
   email: string;
-  password: string;
   establishment: string;
   establishmentId: string;
 };
@@ -141,7 +141,6 @@ export type Student = {
   lastName: string;
   matricule: string;
   email: string;
-  password: string;
   externalRef: string;
   correctAiId: string;
   establishmentId: string;
@@ -154,7 +153,6 @@ export type StudentCreateInput = {
   lastName: string;
   matricule: string;
   email: string;
-  password: string;
   classes: string[];
   classIds?: string[];
 };
@@ -162,9 +160,10 @@ export type StudentCreateInput = {
 export type Admin = {
   id: string;
   initials: string;
+  firstName: string;
+  lastName: string;
   name: string;
   email: string;
-  password: string;
   status: AdminStatus;
   establishment: string;
   establishmentId: string;
@@ -175,7 +174,6 @@ export type AdminCreateInput = {
   firstName: string;
   lastName: string;
   email: string;
-  password: string;
   establishment: string;
   establishmentId: string;
 };

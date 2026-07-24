@@ -144,7 +144,7 @@ export function examMatchesClass(exam: Exam, classItem: ClassRoom) {
   const normalizedClassName = normalizeClassValue(classItem.name);
   const normalizedExamClassName = normalizeClassValue(exam.className);
   if (normalizedExamClassName === normalizedClassId || normalizedExamClassName === normalizedClassName) return true;
-  return exam.className.split(/[,/|]+/).map((segment) => normalizeClassValue(segment.trim())).filter(Boolean).some((segment) => segment === normalizedClassId || segment === normalizedClassName);
+  return (exam.className ?? '').split(/[,/|]+/).map((segment) => normalizeClassValue(segment.trim())).filter(Boolean).some((segment) => segment === normalizedClassId || segment === normalizedClassName);
 }
 
 export function resolveSelectedClassIds(assignedClasses: string[], classList: ClassRoom[]) {
@@ -310,17 +310,16 @@ export type StudentFormValues = {
   lastName: string;
   matricule: string;
   email: string;
-  password: string;
 };
 
 export type StudentFormErrors = Partial<Record<keyof StudentFormValues, string>>;
 
 export function validateStudentForm(
   values: StudentFormValues,
-  options?: { requirePassword?: boolean; existingStudents?: { matricule: string; email: string; id?: string }[]; currentId?: string },
+  options?: { existingStudents?: { matricule: string; email: string; id?: string }[]; currentId?: string },
 ) {
   const errors: StudentFormErrors = {};
-  const { requirePassword = true, existingStudents = [], currentId } = options ?? {};
+  const { existingStudents = [], currentId } = options ?? {};
 
   if (!values.firstName.trim()) {
     errors.firstName = 'Le prénom est requis.';
@@ -342,12 +341,6 @@ export function validateStudentForm(
     errors.email = 'Entrez une adresse email valide.';
   } else if (existingStudents.some((s) => s.email.toLowerCase() === values.email.trim().toLowerCase() && s.id !== currentId)) {
     errors.email = 'Cet email existe déjà.';
-  }
-
-  if (requirePassword && !values.password.trim()) {
-    errors.password = 'Le mot de passe est requis.';
-  } else if (values.password.trim() && values.password.trim().length < 6) {
-    errors.password = 'Le mot de passe doit contenir au moins 6 caractères.';
   }
 
   return errors;

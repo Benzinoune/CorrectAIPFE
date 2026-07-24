@@ -2,13 +2,20 @@ import { useState, useMemo } from 'react';
 import { Alert, Text, View } from 'react-native';
 import * as Print from 'expo-print';
 
-import { Card, Icons, PrimaryButton, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
+import { Card, EmptyState, Icons, PrimaryButton, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
 import { studentTabs } from '@/features/correctai/data/mock-data';
 import { StudentScreenProps, styles, tabPress, getStudentScannedCopy, getStudentVisibleExams, answersMatchMulti } from './shared';
 
 export function StudentReportScreen({ activeTab, onNavigate, studentsData, establishmentsData, selectedStudent, examsData }: StudentScreenProps) {
   const [downloading, setDownloading] = useState(false);
-  const student = selectedStudent ?? studentsData[0];
+  const student = selectedStudent ?? studentsData[0] ?? null;
+  if (!student) {
+    return (
+      <ScreenFrame activeTab={activeTab} tabs={studentTabs} onTabPress={tabPress(onNavigate)} greeting="Mon Relevé">
+        <EmptyState icon={Icons.profile} title="Aucun étudiant" subtitle="Connectez-vous en tant qu'étudiant pour voir votre relevé." />
+      </ScreenFrame>
+    );
+  }
   const fullName = student.firstName && student.lastName ? `${student.firstName} ${student.lastName}` : student.initials ?? 'Etudiant';
   const establishmentName = establishmentsData?.find((e) => e.id === student.establishmentId)?.name ?? (student.establishmentId || 'N/A');
   const reportGreeting = `Releve ${fullName}`;

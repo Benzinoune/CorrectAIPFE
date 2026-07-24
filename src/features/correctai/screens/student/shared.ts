@@ -28,31 +28,22 @@ export function getStudentVisibleExams(student: Student | null | undefined, exam
       if (exam.classIds.some(id => studentClassIds.includes(id.trim().toLowerCase()))) return true;
     }
     // Fallback: compare class name strings
-    const examClasses = exam.className.split(/[,/|]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
+    const examClasses = (exam.className ?? '').split(/[,/|]+/).map(c => c.trim().toLowerCase()).filter(Boolean);
     return examClasses.some(ec => normalizedStudentClasses.includes(ec));
   }).sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
 }
 
 export function getStudentScannedCopy(exam: Exam | null | undefined, student: Student | null | undefined) {
   if (!exam || !student || !exam.scannedCopies || exam.scannedCopies.length === 0) {
-    console.log('[Student] getStudentScannedCopy: no exam, student, or scannedCopies');
     return null;
   }
 
-  console.log('[Student] getStudentScannedCopy: exam=%s, student=%s %s, matricule=%s, correctAiId=%s, externalRef=%s',
-    exam.name, student.firstName, student.lastName, student.matricule, student.correctAiId, student.externalRef);
-  console.log('[Student] scannedCopies count:', exam.scannedCopies.length);
-  exam.scannedCopies.forEach((c, i) => {
-    console.log(`[Student]   copy[${i}] studentName="${c.studentName}" matricule="${c.matricule}" reviewStatus="${c.reviewStatus}" score="${c.calculatedScore}"`);
-  });
-
   // 1. Match by exact matricule (most reliable if OCR reads matricule correctly)
-  if (student.matricule && student.matricule !== 'À extraire plus tard') {
+  if (student.matricule && student.matricule.trim() !== '') {
     const byMatricule = exam.scannedCopies.find(c => 
       c.matricule && c.matricule.trim() === student.matricule.trim()
     );
     if (byMatricule) {
-      console.log('[Student] matched by matricule:', byMatricule.studentName);
       return byMatricule;
     }
   }
@@ -65,7 +56,6 @@ export function getStudentScannedCopy(exam: Exam | null | undefined, student: St
       (c.ocrResult?.matricule && c.ocrResult.matricule.trim() === ref!.trim())
     );
     if (byRef) {
-      console.log('[Student] matched by ref (%s):', ref, byRef.studentName);
       return byRef;
     }
   }
@@ -77,12 +67,10 @@ export function getStudentScannedCopy(exam: Exam | null | undefined, student: St
       c.studentName && c.studentName.trim().toLowerCase() === studentFullName
     );
     if (byName) {
-      console.log('[Student] matched by name:', byName.studentName);
       return byName;
     }
   }
 
-  console.log('[Student] getStudentScannedCopy: no match found for student');
   return null;
 }
 

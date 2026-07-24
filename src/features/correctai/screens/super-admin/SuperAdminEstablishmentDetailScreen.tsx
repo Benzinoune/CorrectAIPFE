@@ -1,13 +1,19 @@
 import { Alert, Text, View } from 'react-native';
 
-import { Avatar, Card, EmptyGap, Icon, Icons, PrimaryButton, ScreenFrame, SectionTitle, StatGrid, StatusPill } from '@/features/correctai/components/ui';
+import { Avatar, Card, EmptyGap, EmptyState, Icon, Icons, PrimaryButton, ScreenFrame, SectionTitle, StatGrid, StatusPill } from '@/features/correctai/components/ui';
 import { correctAiTheme } from '@/features/correctai/theme';
 import { SuperAdminScreenProps, statusTone, styles } from './shared';
 
 const { colors, spacing } = correctAiTheme;
 
 export function SuperAdminEstablishmentDetailScreen({ onNavigate, selectedEstablishment, onDeleteEstablishment }: SuperAdminScreenProps) {
-  if (!selectedEstablishment) return null;
+  if (!selectedEstablishment) {
+    return (
+      <ScreenFrame compactHeader onBack={() => onNavigate('super-admin-establishments')} title="Details Etablissement">
+        <EmptyState icon={Icons.school} title="Aucun établissement" subtitle="Sélectionnez un établissement pour voir ses détails." />
+      </ScreenFrame>
+    );
+  }
 
   return (
     <ScreenFrame compactHeader onBack={() => onNavigate('super-admin-establishments')} title="Details Etablissement">

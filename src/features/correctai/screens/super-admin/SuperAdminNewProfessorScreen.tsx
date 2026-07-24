@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame, SecureField } from '@/features/correctai/components/ui';
+import { Field, FormActions, ScreenFrame } from '@/features/correctai/components/ui';
 import { isValidEmail, normalizeEmail, EMAIL_VALIDATION_MESSAGE } from '@/features/correctai/utils/validation';
 import { SuperAdminScreenProps, styles } from './shared';
 
@@ -9,9 +9,9 @@ export function SuperAdminNewProfessorScreen({ onNavigate, establishmentsData, o
   const [firstName, setFirstName] = useState('');
   const [lastName, setLastName] = useState('');
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
   const [selectedEstId, setSelectedEstId] = useState(establishmentsData[0]?.id ?? '');
   const [errors, setErrors] = useState<string[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const selectedEst = establishmentsData.find((e) => e.id === selectedEstId);
   const establishmentName = selectedEst?.name ?? '';
@@ -21,17 +21,17 @@ export function SuperAdminNewProfessorScreen({ onNavigate, establishmentsData, o
     if (!firstName.trim()) missing.push('Prenom');
     if (!lastName.trim()) missing.push('Nom');
     if (!email.trim()) missing.push('Email');
-    if (!password.trim()) missing.push('Mot de passe');
     if (!selectedEst) missing.push('Etablissement');
     if (missing.length > 0) { setErrors(missing); return; }
     if (!isValidEmail(normalizeEmail(email))) { setErrors([EMAIL_VALIDATION_MESSAGE]); return; }
+    if (submitting) return;
     setErrors([]);
+    setSubmitting(true);
     const est = selectedEst!;
     onCreateProfessor?.({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
       email: email.trim().toLowerCase(),
-      password,
       establishment: est.name,
       establishmentId: est.id,
     });
@@ -52,7 +52,6 @@ export function SuperAdminNewProfessorScreen({ onNavigate, establishmentsData, o
           </View>
         </View>
         <Field autoCapitalize="none" keyboardType="email-address" label="Email *" onChangeText={setEmail} value={email} />
-        <SecureField autoCapitalize="none" label="Mot de passe *" onChangeText={setPassword} value={password} />
         {errors.length > 0 && <Text style={styles.formError}>Champs obligatoires: {errors.join(', ')}.</Text>}
         <View style={styles.pickerWrap}>
           <Text style={styles.pickerLabel}>Etablissement *</Text>
@@ -67,7 +66,7 @@ export function SuperAdminNewProfessorScreen({ onNavigate, establishmentsData, o
             ))}
           </View>
         </View>
-        <FormActions onCancel={() => onNavigate('super-admin-professors')} submitLabel="Creer le professeur" onSubmit={submit} />
+        <FormActions onCancel={() => onNavigate('super-admin-professors')} submitLabel="Creer le professeur" onSubmit={submit} submitting={submitting} />
       </View>
     </ScreenFrame>
   );

@@ -344,7 +344,7 @@ export function ProfessorScannedCopyCorrectionScreen({
             <View style={styles.questionOverlay}>
               {(() => {
                 const qIdx = selectedQuestion - 1;
-                const qTotal = summary.rows.length || exam.questions;
+                const qTotal = summary.rows.length || exam.questions || 1;
                 const cols = qTotal >= 100 ? 4 : qTotal >= 50 ? 3 : 2;
                 const perCol = Math.ceil(qTotal / cols);
                 const colIdx = Math.floor(qIdx / perCol);

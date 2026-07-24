@@ -1,6 +1,9 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import Ionicons from '@expo/vector-icons/Ionicons';
 
 import { InstitutionUnavailableScreen } from '@/features/correctai/components/InstitutionUnavailableScreen';
+import { DataRefreshProvider } from '@/features/correctai/components/ui';
 import {
   AdminHomeScreen,
   AdminEditProfessorScreen,
@@ -58,15 +61,7 @@ import {
   StudentProfileScreen,
   StudentReportScreen,
 } from '@/features/correctai/screens/student';
-import {
-  admins as initialAdmins,
-  classes as initialClasses,
-  establishments as initialEstablishments,
-  exams as initialExams,
-  professors as initialProfessors,
-  students as initialStudents,
-  superAdminUser,
-} from '@/features/correctai/data/mock-data';
+import { useCorrectAiData } from '@/features/correctai/supabase/hooks/useCorrectAiData';
 import type {
   Admin,
   AdminCreateInput,
@@ -85,13 +80,6 @@ import type {
   UserRole,
 } from '@/features/correctai/types';
 import { checkInstitutionStatus, getBlockedMessage } from '@/features/correctai/utils/institution-status';
-
-const homeScreens: Record<UserRole, AppScreen> = {
-  super_admin: 'super-admin-home',
-  admin: 'admin-home',
-  professor: 'professor-home',
-  student: 'student-home',
-};
 
 const activeTabs: Partial<Record<AppScreen, TabId>> = {
   'super-admin-home': 'home',
@@ -119,48 +107,6 @@ const activeTabs: Partial<Record<AppScreen, TabId>> = {
   'student-report': 'report',
   'student-profile': 'profile',
 };
-
-function cloneStudent(student: Student): Student {
-  return {
-    ...student,
-    classes: [...student.classes],
-    classIds: student.classIds ? [...student.classIds] : undefined,
-  };
-}
-
-function cloneEstablishment(establishment: Establishment): Establishment {
-  return {
-    ...establishment,
-    stats: establishment.stats.map((stat) => ({ ...stat })),
-  };
-}
-
-function cloneProfessor(professor: Professor): Professor {
-  return {
-    ...professor,
-    stats: professor.stats.map((stat) => ({ ...stat })),
-  };
-}
-
-function cloneClass(classItem: ClassRoom): ClassRoom {
-  return { ...classItem };
-}
-
-function cloneExam(exam: Exam): Exam {
-  const questionBank = exam.questionBank?.map((question) => ({
-    ...question,
-    correctAnswers: [...question.correctAnswers],
-    detectedAnswers: question.detectedAnswers ? [...question.detectedAnswers] : undefined,
-  }));
-  const scannedCopies = exam.scannedCopies?.map(cloneScannedCopy);
-
-  return {
-    ...exam,
-    classIds: exam.classIds ? [...exam.classIds] : undefined,
-    questionBank: questionBank ?? buildDefaultQuestionBank(exam.questions),
-    scannedCopies,
-  };
-}
 
 function cloneScannedCopy(copy: ScannedCopy): ScannedCopy {
   return {
@@ -191,87 +137,6 @@ function buildDefaultQuestionBank(questionCount: number, defaultPoints = 1): Exa
   }));
 }
 
-function buildMockDetectedAnswers(questionCount: number) {
-  const patterns: string[][] = [
-    ['A'],
-    ['B'],
-    ['C'],
-    ['D'],
-    ['E'],
-    ['A', 'B'],
-    ['A', 'C'],
-    ['B', 'D'],
-    ['C', 'E'],
-    ['A', 'D'],
-  ];
-
-  return Array.from({ length: questionCount }, (_, index) => patterns[index % patterns.length]);
-}
-
-function buildMockScannedCopies(exam: Exam): ScannedCopy[] {
-  const names = [
-    'Non identifié',
-    'Khawla Lali',
-    'Aicha Zeraodi',
-    'Halima Fouti',
-    'Yanis Ziani',
-    'Nadia Belaid',
-    'Ibtissam Sa7out',
-    'Aicha Lolo',
-  ];
-  const matricules = ['0', '14365', '33624', '10390', '1944', '1951', 'K110', 'MAT:2025-001'];
-  const confidenceLevels = [28, 94, 91, 61, 83, 74, 68, 88];
-  const statuses = ['PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING', 'PENDING'] as const;
-  const questionPattern = buildMockDetectedAnswers(exam.questions).map((answers) => answers.join('+'));
-  const copyCount = Math.max(exam.copies, 0);
-
-  return Array.from({ length: copyCount }, (_, index) => ({
-    id: `copy-${exam.id}-${index + 1}`,
-    examId: exam.id,
-    examName: exam.name,
-    studentName: names[index % names.length],
-    matricule: matricules[index % matricules.length],
-    className: exam.className,
-    scannedAt: new Date(Date.UTC(2026, 4, 20, 8, 30 + index * 4)).toISOString(),
-    establishmentId: exam.establishmentId ?? '',
-    aiConfidence: confidenceLevels[index % confidenceLevels.length],
-    reviewStatus: statuses[index % statuses.length],
-    detectedAnswers: questionPattern,
-    detectedAnswersCount: questionPattern.length,
-    calculatedScore: index === 0 ? `0/${exam.questions}` : undefined,
-    ocrResult: {
-      extracted: true,
-      name: index === 0 ? null : names[index % names.length],
-      matricule: matricules[index % matricules.length] === '0' ? null : matricules[index % matricules.length],
-      className: exam.className,
-      confidence: confidenceLevels[index % confidenceLevels.length],
-      missingFields: [],
-    },
-    omrResult: {
-      detected: true,
-      answers: questionPattern.map((answer, questionIndex) => ({
-        question: questionIndex + 1,
-        answer: answer || null,
-        confidence: answer ? 82 : 0,
-      })),
-    },
-    metadata: {
-      source: 'scanner',
-      processedAt: new Date(Date.UTC(2026, 4, 20, 8, 45 + index * 4)).toISOString(),
-    },
-  }));
-}
-
-function seedExamScannedCopies(exam: Exam): Exam {
-  const scannedCopies = exam.scannedCopies?.length ? exam.scannedCopies : buildMockScannedCopies(exam);
-
-  return {
-    ...exam,
-    scannedCopies,
-    copies: scannedCopies.length,
-  };
-}
-
 function classNamesFromIds(classIds: string[] | undefined, classList: ClassRoom[]) {
   if (!classIds?.length) {
     return [];
@@ -293,36 +158,6 @@ function matchesClassReference(value: string, classItem: Pick<ClassRoom, 'id' | 
   );
 }
 
-function rewriteDelimitedClassText(value: string, classItem: ClassRoom, nextName?: string) {
-  const parts = value
-    .split(',')
-    .map((part) => part.trim())
-    .filter(Boolean);
-  const updatedParts = parts
-    .map((part) => (matchesClassReference(part, classItem) ? nextName ?? '' : part))
-    .filter(Boolean);
-
-  return updatedParts.length > 0 ? updatedParts.join(', ') : 'Aucune classe';
-}
-
-function rewriteStudentClassRefs(values: string[], classItem: ClassRoom, nextName?: string) {
-  return values
-    .map((value) => (matchesClassReference(value, classItem) ? nextName ?? '' : value))
-    .filter(Boolean);
-}
-
-function rewriteStudentClassIdRefs(classIds: string[] | undefined, classItem: ClassRoom): string[] {
-  if (!classIds) return [];
-  return classIds.filter((id) => id !== classItem.id);
-}
-
-function rewriteScannedCopyClassRefs(copy: ScannedCopy, classItem: ClassRoom, nextName?: string) {
-  return {
-    ...copy,
-    className: rewriteDelimitedClassText(copy.className, classItem, nextName),
-  };
-}
-
 function studentBelongsToClass(student: Student, classItem: ClassRoom) {
   if (student.classIds?.some((id) => id === classItem.id)) {
     return true;
@@ -339,7 +174,7 @@ function examBelongsToClass(exam: Exam, classItem: ClassRoom) {
     return true;
   }
 
-  return exam.className
+  return (exam.className ?? '')
     .split(/[,/|]+/)
     .map((part) => part.trim())
     .filter(Boolean)
@@ -372,43 +207,68 @@ function buildCorrectAiId() {
   return `CA-${Math.random().toString(36).slice(2, 6).toUpperCase()}`;
 }
 
+function generateTempPassword(): string {
+  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789!@#$%&*';
+  const arr = new Uint8Array(18);
+  for (let i = 0; i < arr.length; i++) arr[i] = Math.floor(Math.random() * chars.length);
+  return Array.from(arr, (n) => chars[n % chars.length]).join('');
+}
+
 export function CorrectAiApp() {
   const [screen, setScreen] = useState<AppScreen>(() => 'splash');
-  const [establishmentsData, setEstablishmentsData] = useState<Establishment[]>(() =>
-    initialEstablishments.map(cloneEstablishment),
-  );
-  const [professorsData, setProfessorsData] = useState<Professor[]>(() => initialProfessors.map(cloneProfessor));
-  const [studentsData, setStudentsData] = useState<Student[]>(() => initialStudents.map(cloneStudent));
-  const [classesData, setClassesData] = useState<ClassRoom[]>(() => initialClasses.map(cloneClass));
-  const [examsData, setExamsData] = useState<Exam[]>(() =>
-    initialExams.map((exam) => cloneExam(seedExamScannedCopies(exam))),
-  );
-  const [selectedStudent, setSelectedStudent] = useState<Student | null>(() =>
-    initialStudents[0] ? cloneStudent(initialStudents[0]) : null,
-  );
-  const [adminsData, setAdminsData] = useState<Admin[]>(() => initialAdmins.map((a) => ({ ...a })));
-  const [selectedEstablishment, setSelectedEstablishment] = useState<Establishment | null>(() =>
-    initialEstablishments[0] ? cloneEstablishment(initialEstablishments[0]) : null,
-  );
-  const [selectedProfessor, setSelectedProfessor] = useState<Professor | null>(() =>
-    initialProfessors[0] ? cloneProfessor(initialProfessors[0]) : null,
-  );
+  const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [selectedEstablishment, setSelectedEstablishment] = useState<Establishment | null>(null);
+  const [selectedProfessor, setSelectedProfessor] = useState<Professor | null>(null);
   const [selectedAdmin, setSelectedAdmin] = useState<Admin | null>(null);
-  const [selectedClass, setSelectedClass] = useState<ClassRoom | null>(() =>
-    initialClasses[0] ? cloneClass(initialClasses[0]) : null,
-  );
-  const [selectedExam, setSelectedExam] = useState<Exam | null>(() =>
-    initialExams[0] ? cloneExam(seedExamScannedCopies(initialExams[0])) : null,
-  );
-  const [selectedScannedCopy, setSelectedScannedCopy] = useState<ScannedCopy | null>(() => {
-    const firstExam = initialExams[0];
-    const seededExam = firstExam ? seedExamScannedCopies(firstExam) : null;
-
-    return seededExam?.scannedCopies?.[0] ? cloneScannedCopy(seededExam.scannedCopies[0]) : null;
-  });
+  const [selectedClass, setSelectedClass] = useState<ClassRoom | null>(null);
+  const [selectedExam, setSelectedExam] = useState<Exam | null>(null);
+  const [selectedScannedCopy, setSelectedScannedCopy] = useState<ScannedCopy | null>(null);
+  const [selectedExamCopies, setSelectedExamCopies] = useState<ScannedCopy[]>([]);
   const [selectedQuestionNumber, setSelectedQuestionNumber] = useState<number | null>(null);
   const [scannerMode, setScannerMode] = useState<'copies' | 'key'>('copies');
+
+  const [adminEstablishmentId, setAdminEstablishmentId] = useState<string | undefined>(undefined);
+  const [loggedInUserId, setLoggedInUserId] = useState<string | null>(null);
+  const [loggedInRole, setLoggedInRole] = useState<UserRole | null>(null);
+  const [loggedInProfile, setLoggedInProfile] = useState<{ initials: string; first_name: string; last_name: string; email: string; status: string; created_at: string } | null>(null);
+
+  const {
+    establishmentsData,
+    adminsData,
+    professorsData,
+    studentsData,
+    classesData,
+    examsData,
+    loading,
+    error,
+    refetchAll,
+    loadScannedCopiesForExam,
+    createEstablishmentRow,
+    updateEstablishmentRow,
+    removeEstablishment,
+    createProfileRow,
+    updateProfileRow,
+    removeProfile,
+    createClassRow,
+    updateClassRow,
+    removeClass,
+    createExamRow,
+    updateExamRow,
+    removeExam,
+    createExamClass,
+    removeExamClass,
+    upsertExamQuestion,
+    createStudentClass,
+    removeStudentClass,
+    createScannedCopyRow,
+    updateScannedCopyRow,
+    removeScannedCopyRow,
+    insertOcrResult,
+    insertOmrResult,
+  } = useCorrectAiData(loggedInRole);
+
   const activeTab = useMemo(() => activeTabs[screen] ?? 'home', [screen]);
+
   const classesWithCounts = useMemo(
     () => buildClassesWithCounts(classesData, studentsData, examsData),
     [classesData, examsData, studentsData],
@@ -435,12 +295,16 @@ export function CorrectAiApp() {
         : null,
     [professorsData, selectedProfessor],
   );
-  const selectedExamForRender = useMemo(
-    () => (selectedExam ? examsData.find((exam) => exam.id === selectedExam.id) ?? selectedExam : null),
-    [examsData, selectedExam],
-  );
+  const selectedExamForRender = useMemo(() => {
+    if (!selectedExam) return null;
+    const base = examsData.find((exam) => exam.id === selectedExam.id) ?? selectedExam;
+    if (selectedExamCopies.length > 0) {
+      return { ...base, scannedCopies: selectedExamCopies, copies: selectedExamCopies.length };
+    }
+    return base;
+  }, [examsData, selectedExam, selectedExamCopies]);
   const totalCopies = useMemo(
-    () => examsData.reduce((sum, exam) => sum + (exam.scannedCopies?.length ?? exam.copies), 0),
+    () => examsData.reduce((sum, exam) => sum + exam.copies, 0),
     [examsData],
   );
 
@@ -457,30 +321,25 @@ export function CorrectAiApp() {
   }, [selectedExamForRender, selectedScannedCopy]);
 
   useEffect(() => {
-    if (!selectedExamForRender) {
+    if (!selectedExam) {
+      setSelectedExamCopies([]);
       return;
     }
+    let mounted = true;
+    loadScannedCopiesForExam(selectedExam.id).then((copies) => {
+      if (mounted) setSelectedExamCopies(copies);
+    });
+    return () => { mounted = false; };
+  }, [selectedExam, loadScannedCopiesForExam]);
 
-    console.log(
-      '[App] render state: screen=%s examId=%s copyCount=%d selectedCopyId=%s',
-      screen,
-      selectedExamForRender.id,
-      selectedExamForRender.scannedCopies?.length ?? 0,
-      selectedScannedCopyForRender?.id ?? 'none',
-    );
-  }, [screen, selectedExamForRender, selectedScannedCopyForRender]);
-  const previousScreenRef = useRef<AppScreen | null>(null);
+  const [previousScreen, setPreviousScreen] = useState<AppScreen | null>(null);
 
-  const navigate = (nextScreen: AppScreen) => {
+  const navigate = useCallback((nextScreen: AppScreen) => {
     if (nextScreen !== screen) {
-      previousScreenRef.current = screen;
+      setPreviousScreen(screen);
       setScreen(nextScreen);
     }
-  };
-
-  const [adminEstablishmentId, setAdminEstablishmentId] = useState<string | undefined>(undefined);
-  const [loggedInUserId, setLoggedInUserId] = useState<string | null>(null);
-  const [loggedInRole, setLoggedInRole] = useState<UserRole | null>(null);
+  }, [screen]);
 
   const loggedInProfessor = useMemo(
     () => (loggedInRole === 'professor' && loggedInUserId ? professorsData.find((p) => p.id === loggedInUserId) ?? null : null),
@@ -497,8 +356,27 @@ export function CorrectAiApp() {
     [loggedInRole, loggedInUserId, studentsData],
   );
 
+  const loggedInSuperAdmin = useMemo<Admin | undefined>(() => {
+    if (loggedInRole !== 'super_admin' || !loggedInUserId || !loggedInProfile) return undefined;
+    return {
+      id: loggedInUserId,
+      initials: loggedInProfile.initials,
+      firstName: loggedInProfile.first_name,
+      lastName: loggedInProfile.last_name,
+      name: `${loggedInProfile.first_name} ${loggedInProfile.last_name}`.trim(),
+      email: loggedInProfile.email,
+      status: 'ACTIF',
+      establishment: '',
+      establishmentId: '',
+      createdAt: loggedInProfile.created_at,
+    };
+  }, [loggedInRole, loggedInUserId, loggedInProfile]);
+
   const institutionCheck = useMemo(() => {
     if (!loggedInRole || loggedInRole === 'super_admin') {
+      return { allowed: true } as const;
+    }
+    if (establishmentsData.length === 0) {
       return { allowed: true } as const;
     }
     const establishmentId = loggedInProfessor?.establishmentId
@@ -517,6 +395,70 @@ export function CorrectAiApp() {
       setScreen('login');
     }
   }, [institutionCheck.allowed, loggedInRole]);
+
+  useEffect(() => {
+    let mounted = true;
+    let subscription: { unsubscribe: () => void } | null = null;
+
+    const init = async () => {
+      try {
+        const authModule = await import('@/features/correctai/supabase/auth');
+        const { data: { subscription: sub } } = authModule.onAuthStateChange(async (authUser) => {
+          if (!mounted) return;
+          if (authUser) {
+            setLoggedInUserId(authUser.id);
+            setLoggedInRole(authUser.role);
+            setAdminEstablishmentId(authUser.profile.establishment_id ?? undefined);
+            setLoggedInProfile(authUser.profile);
+          } else {
+            setLoggedInUserId(null);
+            setLoggedInRole(null);
+            setAdminEstablishmentId(undefined);
+            setLoggedInProfile(null);
+            setSelectedStudent(null);
+            setSelectedProfessor(null);
+            setSelectedAdmin(null);
+            setSelectedEstablishment(null);
+            setSelectedClass(null);
+            setSelectedExam(null);
+            setSelectedScannedCopy(null);
+            setSelectedExamCopies([]);
+            setSelectedQuestionNumber(null);
+            setScreen('login');
+          }
+        });
+        subscription = sub;
+
+        const session = await authModule.getCurrentSession();
+        if (mounted && session) {
+          setLoggedInUserId(session.id);
+          setLoggedInRole(session.role);
+          setAdminEstablishmentId(session.profile.establishment_id ?? undefined);
+          setLoggedInProfile(session.profile);
+
+          const homeScreens: Record<string, string> = {
+            super_admin: 'super-admin-home',
+            admin: 'admin-home',
+            professor: 'professor-home',
+            student: 'student-home',
+          };
+          const homeScreen = homeScreens[session.role];
+          if (homeScreen) {
+            setScreen(homeScreen as AppScreen);
+          }
+        }
+      } catch (e) {
+        if (mounted) setScreen('login');
+      }
+    };
+
+    init();
+
+    return () => {
+      mounted = false;
+      subscription?.unsubscribe?.();
+    };
+  }, []);
 
   const professorEstablishmentId = loggedInProfessor?.establishmentId ?? '';
   const professorClasses = useMemo(
@@ -542,7 +484,7 @@ export function CorrectAiApp() {
     () => examsData.filter((e) => {
       if (e.establishmentId !== studentEstablishmentId) return false;
       if (studentClassIds.length > 0 && e.classIds?.some((id) => studentClassIds.includes(id))) return true;
-      return e.className
+      return (e.className ?? '')
         .split(/[,/|]+/)
         .map((part) => part.trim().toLowerCase())
         .filter(Boolean)
@@ -555,411 +497,445 @@ export function CorrectAiApp() {
     [studentsData, loggedInStudent?.id],
   );
 
-  const login = (email: string, password: string): { success: boolean; error?: string } => {
+  const handleLogout = useCallback(async () => {
+    try {
+      const { signOut } = await import('@/features/correctai/supabase/auth');
+      await signOut();
+    } catch {
+      // Sign out may fail on network error; state cleanup still proceeds
+    }
+    setLoggedInUserId(null);
+    setLoggedInRole(null);
+    setLoggedInProfile(null);
+    setAdminEstablishmentId(undefined);
+    setSelectedStudent(null);
+    setSelectedProfessor(null);
+    setSelectedAdmin(null);
+    setSelectedEstablishment(null);
+    setSelectedClass(null);
+    setSelectedExam(null);
+    setSelectedScannedCopy(null);
+    setSelectedExamCopies([]);
+    setSelectedQuestionNumber(null);
+    setScreen('login');
+  }, []);
+
+  const login = async (email: string, password: string): Promise<{ success: boolean; error?: string }> => {
+    const { signIn, checkInstitutionStatus: checkInst } = await import('@/features/correctai/supabase/auth');
     const normalizedEmail = email.trim().toLowerCase();
 
-    if (normalizedEmail === superAdminUser.email && password === superAdminUser.password) {
-      setLoggedInRole('super_admin');
-      setLoggedInUserId(superAdminUser.id);
-      setAdminEstablishmentId(undefined);
-      setScreen('super-admin-home');
-      return { success: true };
+    let result;
+    try {
+      result = await signIn(normalizedEmail, password);
+    } catch (e) {
+      return { success: false, error: 'Erreur réseau. Vérifiez votre connexion.' };
+    }
+    if (!result.success) {
+      return { success: false, error: result.error };
     }
 
-    const matchedAdmin = adminsData.find(
-      (a) => a.email === normalizedEmail && a.password === password && a.status === 'ACTIF',
-    );
-    if (matchedAdmin) {
-      const instCheck = checkInstitutionStatus(establishmentsData, matchedAdmin.establishmentId);
-      if (!instCheck.allowed) {
-        return { success: false, error: getBlockedMessage(instCheck.reason!) };
-      }
-      setLoggedInRole('admin');
-      setLoggedInUserId(matchedAdmin.id);
-      setAdminEstablishmentId(matchedAdmin.establishmentId);
-      setSelectedAdmin(matchedAdmin);
-      setScreen('admin-home');
-      return { success: true };
+    const user = result.user!;
+    setSelectedStudent(null);
+    setSelectedProfessor(null);
+    setSelectedAdmin(null);
+    setSelectedEstablishment(null);
+    setSelectedClass(null);
+    setSelectedExam(null);
+    setSelectedScannedCopy(null);
+    setSelectedExamCopies([]);
+    setSelectedQuestionNumber(null);
+
+    const instCheck = await checkInst(user.profile.establishment_id ?? '');
+    if (!instCheck.allowed) {
+      return { success: false, error: instCheck.reason ? getBlockedMessage(instCheck.reason) : 'Accès refusé.' };
     }
 
-    const matchedProfessor = professorsData.find(
-      (p) => p.email === normalizedEmail && p.password === password && p.status === 'ACTIF',
-    );
-    if (matchedProfessor) {
-      const instCheck = checkInstitutionStatus(establishmentsData, matchedProfessor.establishmentId);
-      if (!instCheck.allowed) {
-        return { success: false, error: getBlockedMessage(instCheck.reason!) };
-      }
-      setLoggedInRole('professor');
-      setLoggedInUserId(matchedProfessor.id);
-      setAdminEstablishmentId(matchedProfessor.establishmentId);
-      setSelectedProfessor(matchedProfessor);
-      setScreen('professor-home');
-      return { success: true };
+    setLoggedInRole(user.role);
+    setLoggedInUserId(user.id);
+    setAdminEstablishmentId(user.profile.establishment_id ?? undefined);
+    setLoggedInProfile(user.profile);
+
+    switch (user.role) {
+      case 'super_admin':
+        setScreen('super-admin-home');
+        break;
+      case 'admin':
+        setSelectedAdmin({
+          id: user.id,
+          initials: user.profile.initials,
+          firstName: user.profile.first_name,
+          lastName: user.profile.last_name,
+          name: `${user.profile.first_name} ${user.profile.last_name}`,
+          email: user.email,
+          status: user.profile.status,
+          establishment: '',
+          establishmentId: user.profile.establishment_id ?? '',
+          createdAt: user.profile.created_at,
+        });
+        setScreen('admin-home');
+        break;
+      case 'professor':
+        setSelectedProfessor({
+          id: user.id,
+          initials: user.profile.initials,
+          firstName: user.profile.first_name,
+          lastName: user.profile.last_name,
+          name: `${user.profile.first_name} ${user.profile.last_name}`,
+          email: user.email,
+          status: user.profile.status,
+          establishment: '',
+          establishmentId: user.profile.establishment_id ?? '',
+          stats: [],
+        });
+        setScreen('professor-home');
+        break;
+      case 'student':
+        setSelectedStudent({
+          id: user.id,
+          initials: user.profile.initials,
+          firstName: user.profile.first_name,
+          lastName: user.profile.last_name,
+          matricule: user.profile.matricule ?? '',
+          email: user.email,
+          externalRef: user.profile.external_ref ?? '',
+          correctAiId: user.profile.correct_ai_id ?? '',
+          establishmentId: user.profile.establishment_id ?? '',
+          classes: [],
+          classIds: [],
+        });
+        setScreen('student-home');
+        break;
     }
 
-    const matchedStudent = studentsData.find(
-      (s) => s.email === normalizedEmail && s.password === password,
-    );
-    if (matchedStudent) {
-      const instCheck = checkInstitutionStatus(establishmentsData, matchedStudent.establishmentId);
-      if (!instCheck.allowed) {
-        return { success: false, error: getBlockedMessage(instCheck.reason!) };
-      }
-      setLoggedInRole('student');
-      setLoggedInUserId(matchedStudent.id);
-      setAdminEstablishmentId(matchedStudent.establishmentId);
-      setSelectedStudent(matchedStudent);
-      setScreen('student-home');
-      return { success: true };
-    }
-
-    return { success: false, error: 'Email ou mot de passe incorrect' };
+    return { success: true };
   };
 
-  const createAdmin = (draft: AdminCreateInput) => {
+  const createAdmin = async (draft: AdminCreateInput) => {
     const firstName = draft.firstName.trim();
     const lastName = draft.lastName.trim();
-    const nextAdmin: Admin = {
-      id: `admin-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase(),
-      name: `${firstName} ${lastName}`.trim(),
-      email: draft.email.trim().toLowerCase(),
-      password: draft.password,
+    const email = draft.email.trim().toLowerCase();
+    const tempPassword = generateTempPassword();
+    const { signUp } = await import('@/features/correctai/supabase/auth');
+    const result = await signUp(email, tempPassword, {
+      role: 'admin',
       status: 'ACTIF',
-      establishment: draft.establishment,
-      establishmentId: draft.establishmentId,
-      createdAt: new Date().toISOString(),
-    };
-    setAdminsData((current) => [nextAdmin, ...current]);
-    setSelectedAdmin(nextAdmin);
+      initials: `${firstName.charAt(0)}${lastName.charAt(0)}`.toUpperCase(),
+      first_name: firstName,
+      last_name: lastName || ' ',
+      email,
+      establishment_id: draft.establishmentId || null,
+      matricule: null,
+      external_ref: null,
+      correct_ai_id: null,
+    });
+    if (!result.success) return;
+    const row = result.user!.profile;
+    setSelectedAdmin({
+      id: row.id, initials: row.initials, firstName: row.first_name, lastName: row.last_name,
+      name: `${row.first_name} ${row.last_name}`.trim(),
+      email: row.email, status: row.status, establishment: draft.establishment,
+      establishmentId: row.establishment_id ?? '', createdAt: row.created_at,
+    });
   };
 
-  const updateAdmin = (updated: Admin) => {
-    setAdminsData((current) => current.map((a) => (a.id === updated.id ? { ...updated } : a)));
+  const updateAdmin = async (updated: Admin) => {
+    await updateProfileRow(updated.id, {
+      initials: updated.initials,
+      first_name: updated.firstName,
+      last_name: updated.lastName,
+      email: updated.email,
+      status: updated.status,
+    });
     setSelectedAdmin(updated);
   };
 
-  const deleteAdmin = (adminId: string) => {
-    setAdminsData((current) => current.filter((a) => a.id !== adminId));
+  const deleteAdmin = async (adminId: string) => {
+    await removeProfile(adminId);
     setSelectedAdmin((current) => (current?.id === adminId ? null : current));
   };
 
-  const updateProfessor = (updated: Professor) => {
-    setProfessorsData((current) => current.map((p) => (p.id === updated.id ? cloneProfessor(updated) : p)));
+  const updateProfessor = async (updated: Professor) => {
+    await updateProfileRow(updated.id, {
+      initials: updated.initials,
+      first_name: updated.firstName,
+      last_name: updated.lastName,
+      email: updated.email,
+      status: updated.status,
+    });
     setSelectedProfessor(updated);
   };
 
-  const deleteProfessor = (professorId: string) => {
-    const professorToDelete = professorsData.find((p) => p.id === professorId);
-    setProfessorsData((current) => {
-      const next = current.filter((p) => p.id !== professorId);
-      setSelectedProfessor((currentProf) =>
-        currentProf?.id === professorId ? (next[0] ? cloneProfessor(next[0]) : null) : currentProf,
-      );
-      return next;
-    });
-    if (professorToDelete) {
-      setEstablishmentsData((current) =>
-        current.map((est) => {
-          if (est.id !== professorToDelete.establishmentId) return est;
-          const newCount = Math.max(0, est.professorsCount - 1);
-          return {
-            ...est,
-            professorsCount: newCount,
-            stats: est.stats.map((s) =>
-              s.label.toLowerCase().includes('prof') ? { ...s, value: String(newCount) } : s,
-            ),
-          };
-        }),
-      );
-      setExamsData((current) =>
-        current.map((exam) =>
-          exam.professorId === professorId ? { ...exam, professorId: '' } : exam,
-        ),
-      );
-    }
+  const deleteProfessor = async (professorId: string) => {
+    await removeProfile(professorId);
+    setSelectedProfessor((current) =>
+      current?.id === professorId ? (professorsData[0] ? professorsData[0] : null) : current,
+    );
   };
 
-  const adminInitials = (name: string) =>
-    name
-      .split(' ')
-      .map((part) => part.charAt(0))
-      .join('')
-      .toUpperCase()
-      .slice(0, 2) || 'AD';
-
-  const createEstablishment = (draft: {
+  const createEstablishment = async (draft: {
     name: string;
     city: string;
     adminName: string;
     adminEmail: string;
-    adminPassword: string;
   }) => {
-    const estId = `est-${Date.now().toString(36)}`;
-    const nextEstablishment = {
-      id: estId,
+    const estRow = await createEstablishmentRow({
       name: draft.name,
       city: draft.city,
-      adminName: draft.adminName,
-      adminEmail: draft.adminEmail,
-      status: 'ACTIF' as const,
-      professorsCount: 0,
-      studentsCount: 0,
-      createdAt: new Date().toISOString(),
-      stats: [
-        { label: 'Professeurs', value: '0', tone: 'primary' as const },
-        { label: 'Etudiants', value: '0', tone: 'primary' as const },
-        { label: 'Examens/mois', value: '0', tone: 'primary' as const },
-      ],
-    };
-    setEstablishmentsData((current) => [nextEstablishment, ...current]);
-    setSelectedEstablishment(nextEstablishment);
-    setAdminsData((current) => [
-      {
-        id: `admin-${Date.now().toString(36)}`,
-        initials: adminInitials(draft.adminName),
-        name: draft.adminName,
+      admin_name: draft.adminName,
+      admin_email: draft.adminEmail.toLowerCase(),
+      status: 'ACTIF',
+    });
+    if (estRow) {
+      setSelectedEstablishment(estRow);
+      const { signUp } = await import('@/features/correctai/supabase/auth');
+      const nameParts = draft.adminName.split(' ');
+      const tempPassword = generateTempPassword();
+      await signUp(draft.adminEmail.toLowerCase(), tempPassword, {
+        role: 'admin',
+        initials: draft.adminName.split(' ').map((p) => p.charAt(0)).join('').toUpperCase().slice(0, 2) || 'AD',
+        first_name: nameParts[0] ?? draft.adminName,
+        last_name: nameParts.slice(1).join(' ') || ' ',
         email: draft.adminEmail.toLowerCase(),
-        password: draft.adminPassword,
-        status: 'ACTIF' as const,
-        establishment: draft.name,
-        establishmentId: estId,
-        createdAt: new Date().toISOString(),
-      },
-      ...current,
-    ]);
+        establishment_id: estRow.id,
+        status: 'ACTIF',
+        matricule: null,
+        external_ref: null,
+        correct_ai_id: null,
+      });
+    }
   };
 
-  const updateEstablishment = (updated: Establishment) => {
-    setEstablishmentsData((current) => current.map((e) => (e.id === updated.id ? cloneEstablishment(updated) : e)));
+  const updateEstablishment = async (updated: Establishment) => {
+    await updateEstablishmentRow(updated.id, {
+      name: updated.name,
+      city: updated.city,
+      admin_name: updated.adminName,
+      admin_email: updated.adminEmail,
+      status: updated.status,
+      professors_count: updated.professorsCount,
+      students_count: updated.studentsCount,
+    });
     setSelectedEstablishment(updated);
   };
 
-  const deleteEstablishment = (establishmentId: string) => {
-    setEstablishmentsData((current) => {
-      const next = current.filter((e) => e.id !== establishmentId);
-      setSelectedEstablishment((currentEst) =>
-        currentEst?.id === establishmentId ? (next[0] ? cloneEstablishment(next[0]) : null) : currentEst,
-      );
-      return next;
-    });
-    setAdminsData((current) => current.filter((a) => a.establishmentId !== establishmentId));
-    setProfessorsData((current) => {
-      const next = current.filter((p) => p.establishmentId !== establishmentId);
-      setSelectedProfessor((currentProf) =>
-        currentProf?.establishmentId === establishmentId ? (next[0] ? cloneProfessor(next[0]) : null) : currentProf,
-      );
-      return next;
-    });
-    setClassesData((current) => current.filter((c) => c.establishmentId !== establishmentId).map(cloneClass));
-    setExamsData((current) => {
-      const next = current.filter((e) => e.establishmentId !== establishmentId);
-      setSelectedExam((currentExam) =>
-        currentExam?.establishmentId === establishmentId ? null : currentExam,
-      );
-      setSelectedScannedCopy(null);
-      return next;
-    });
-    setStudentsData((current) => current.filter((s) => s.establishmentId !== establishmentId).map(cloneStudent));
+  const deleteEstablishment = async (establishmentId: string) => {
+    await removeEstablishment(establishmentId);
+    setSelectedEstablishment(null);
+    setSelectedProfessor(null);
+    setSelectedExam(null);
+    setSelectedScannedCopy(null);
   };
 
-  const createProfessor = (professorDraft: ProfessorCreateInput) => {
+  const createProfessor = async (professorDraft: ProfessorCreateInput) => {
     const firstName = professorDraft.firstName.trim();
     const lastName = professorDraft.lastName.trim();
-    const email = professorDraft.email.trim().toLowerCase();
-    const establishmentName = professorDraft.establishment.trim() || 'Etablissement';
     const establishmentId = professorDraft.establishmentId || adminEstablishmentId || '';
-    const nextProfessor = cloneProfessor({
-      id: `professor-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      initials: buildProfessorInitials(firstName, lastName),
-      name: `${firstName || 'Nouveau'} ${lastName || 'Professeur'}`.trim(),
-      email,
-      password: professorDraft.password,
+    const email = professorDraft.email.trim().toLowerCase();
+    const tempPassword = generateTempPassword();
+    const { signUp } = await import('@/features/correctai/supabase/auth');
+    const result = await signUp(email, tempPassword, {
+      role: 'professor',
       status: 'ACTIF',
-      establishment: establishmentName,
-      establishmentId,
-      stats: [
-        { label: 'Classes', value: '0', tone: 'primary' },
-        { label: 'Examens', value: '0', tone: 'primary' },
-        { label: 'Etudiants', value: '0', tone: 'primary' },
-      ],
+      initials: buildProfessorInitials(firstName, lastName),
+      first_name: firstName || 'Nouveau',
+      last_name: lastName || 'Professeur',
+      email,
+      establishment_id: establishmentId || null,
+      matricule: null,
+      external_ref: null,
+      correct_ai_id: null,
     });
-
-    setProfessorsData((currentProfessors) => [nextProfessor, ...currentProfessors]);
-    setSelectedProfessor(nextProfessor);
-    setEstablishmentsData((current) =>
-      current.map((est) => {
-        if (est.name !== establishmentName && est.id !== establishmentId) return est;
-        const newCount = est.professorsCount + 1;
-        return {
-          ...est,
-          professorsCount: newCount,
-          stats: est.stats.map((s) =>
-            s.label.toLowerCase().includes('prof') ? { ...s, value: String(newCount) } : s,
-          ),
-        };
-      }),
-    );
+    if (!result.success) return;
+    const row = result.user!.profile;
+    const prof: Professor = {
+      id: row.id, initials: row.initials, firstName: row.first_name, lastName: row.last_name,
+      name: `${row.first_name} ${row.last_name}`.trim(),
+      email: row.email, status: row.status,
+      establishment: professorDraft.establishment || 'Etablissement',
+      establishmentId: row.establishment_id ?? '',
+      stats: [{ label: 'Classes', value: '0', tone: 'primary' }, { label: 'Examens', value: '0', tone: 'primary' }, { label: 'Etudiants', value: '0', tone: 'primary' }],
+    };
+    setSelectedProfessor(prof);
   };
 
-  const updateStudent = (updatedStudent: Student) => {
-    const nextStudent = cloneStudent({
-      ...updatedStudent,
-      classes: [...updatedStudent.classes],
+  const updateStudent = async (updatedStudent: Student) => {
+    await updateProfileRow(updatedStudent.id, {
+      initials: updatedStudent.initials,
+      first_name: updatedStudent.firstName,
+      last_name: updatedStudent.lastName,
       email: updatedStudent.email.trim().toLowerCase(),
+      matricule: updatedStudent.matricule,
+      external_ref: updatedStudent.externalRef,
+      correct_ai_id: updatedStudent.correctAiId,
     });
-
-    setStudentsData((currentStudents) =>
-      currentStudents.map((student) => (student.id === nextStudent.id ? nextStudent : student)),
-    );
-    setSelectedStudent(nextStudent);
+    const oldStudent = studentsData.find((s) => s.id === updatedStudent.id);
+    const oldClassIds = oldStudent?.classIds ?? [];
+    const newClassIds = updatedStudent.classIds ?? [];
+    for (const classId of oldClassIds) {
+      if (!newClassIds.includes(classId)) {
+        await removeStudentClass(updatedStudent.id, classId);
+      }
+    }
+    for (const classId of newClassIds) {
+      if (!oldClassIds.includes(classId)) {
+        await createStudentClass(updatedStudent.id, classId);
+      }
+    }
+    setSelectedStudent(updatedStudent);
   };
 
-  const createStudent = (studentDraft: StudentCreateInput) => {
+  const createStudent = async (studentDraft: StudentCreateInput) => {
     const firstName = studentDraft.firstName.trim();
     const lastName = studentDraft.lastName.trim();
     const matricule = studentDraft.matricule.trim();
-    const email = studentDraft.email.trim().toLowerCase();
     const estId = loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? '';
-    const nextStudent = cloneStudent({
-      id: `student-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
+    const email = studentDraft.email.trim().toLowerCase();
+    const tempPassword = generateTempPassword();
+    const { signUp } = await import('@/features/correctai/supabase/auth');
+    const result = await signUp(email, tempPassword, {
+      role: 'student',
+      status: 'ACTIF',
       initials: buildStudentInitials(firstName, lastName),
-      firstName: firstName || 'Prenom',
-      lastName: lastName || 'Nom',
-      matricule: matricule || `MAT-${Date.now().toString(36).slice(-4)}`,
+      first_name: firstName || 'Prenom',
+      last_name: lastName || 'Nom',
       email,
-      password: studentDraft.password,
-      externalRef: matricule || `MAT-${Date.now().toString(36).slice(-4)}`,
-      correctAiId: buildCorrectAiId(),
-      establishmentId: estId,
+      matricule: matricule || `MAT-${Date.now().toString(36).slice(-4)}`,
+      external_ref: matricule || `MAT-${Date.now().toString(36).slice(-4)}`,
+      correct_ai_id: buildCorrectAiId(),
+      establishment_id: estId || null,
+    });
+    if (!result.success) return;
+    const row = result.user!.profile;
+    const student: Student = {
+      id: row.id, initials: row.initials, firstName: row.first_name, lastName: row.last_name,
+      matricule: row.matricule ?? '', email: row.email,
+      externalRef: row.external_ref ?? '', correctAiId: row.correct_ai_id ?? '',
+      establishmentId: row.establishment_id ?? '',
       classes: [...studentDraft.classes],
       classIds: studentDraft.classIds ? [...studentDraft.classIds] : undefined,
-    });
-
-    setStudentsData((currentStudents) => [nextStudent, ...currentStudents]);
-    setSelectedStudent(nextStudent);
-    if (estId) {
-      setEstablishmentsData((current) =>
-        current.map((est) => {
-          if (est.id !== estId) return est;
-          const newCount = est.studentsCount + 1;
-          return {
-            ...est,
-            studentsCount: newCount,
-            stats: est.stats.map((s) =>
-              s.label.toLowerCase().includes('etudiant') ? { ...s, value: String(newCount) } : s,
-            ),
-          };
-        }),
-      );
+    };
+    const classIds = studentDraft.classIds ?? [];
+    for (const classId of classIds) {
+      await createStudentClass(row.id, classId);
     }
+    setSelectedStudent(student);
   };
 
-  const deleteStudent = (studentId: string) => {
-    const studentToDelete = studentsData.find((s) => s.id === studentId);
-    setStudentsData((currentStudents) => {
-      const nextStudents = currentStudents.filter((student) => student.id !== studentId);
-
-      setSelectedStudent((currentStudent) =>
-        currentStudent?.id === studentId ? (nextStudents[0] ? cloneStudent(nextStudents[0]) : null) : currentStudent,
-      );
-
-      return nextStudents.map(cloneStudent);
-    });
-    if (studentToDelete?.establishmentId) {
-      setEstablishmentsData((current) =>
-        current.map((est) => {
-          if (est.id !== studentToDelete.establishmentId) return est;
-          const newCount = Math.max(0, est.studentsCount - 1);
-          return {
-            ...est,
-            studentsCount: newCount,
-            stats: est.stats.map((s) =>
-              s.label.toLowerCase().includes('etudiant') ? { ...s, value: String(newCount) } : s,
-            ),
-          };
-        }),
-      );
-    }
+  const deleteStudent = async (studentId: string) => {
+    await removeProfile(studentId);
+    setSelectedStudent((current) =>
+      current?.id === studentId ? (studentsData[0] ? studentsData[0] : null) : current,
+    );
   };
 
-  const createExam = (examDraft: Omit<Exam, 'id'>) => {
+  const createExam = async (examDraft: Omit<Exam, 'id'>) => {
     const estId = loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? examDraft.establishmentId ?? '';
-    const nextExam = cloneExam({
-      ...examDraft,
-      id: `exam-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      establishmentId: estId,
-      professorId: examDraft.professorId ?? loggedInProfessor?.id ?? '',
-      classIds: examDraft.classIds ? [...examDraft.classIds] : undefined,
-      questionBank: examDraft.questionBank?.map((question) => ({
-        ...question,
-        correctAnswers: [...question.correctAnswers],
-        detectedAnswers: question.detectedAnswers ? [...question.detectedAnswers] : undefined,
-      })) ?? buildDefaultQuestionBank(examDraft.questions),
-      scannedCopies: [],
+    const examId = `exam-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`;
+    const row = await createExamRow({
+      id: examId,
+      name: examDraft.name,
+      subject: examDraft.subject,
+      class_name: examDraft.className,
+      professor_id: examDraft.professorId || loggedInProfessor?.id || null,
+      establishment_id: estId,
+      date: examDraft.date,
+      questions: examDraft.questions,
+      status: examDraft.status,
     });
-
-    setExamsData((currentExams) => [nextExam, ...currentExams]);
-    setSelectedExam(nextExam);
-  };
-
-  const updateExam = (updatedExam: Exam) => {
-    const nextExam = cloneExam({
-      ...updatedExam,
-      copies: updatedExam.scannedCopies?.length ?? updatedExam.copies,
-      classIds: updatedExam.classIds ? [...updatedExam.classIds] : undefined,
-      questionBank:
-        updatedExam.questionBank?.map((question) => ({
-          ...question,
-          correctAnswers: [...question.correctAnswers],
-          detectedAnswers: question.detectedAnswers ? [...question.detectedAnswers] : undefined,
-        })) ?? buildDefaultQuestionBank(updatedExam.questions),
-    });
-
-    setExamsData((currentExams) => currentExams.map((exam) => (exam.id === nextExam.id ? nextExam : exam)));
-    setSelectedExam(nextExam);
-    setSelectedScannedCopy((currentCopy) => {
-      if (!nextExam.scannedCopies?.length) {
-        return null;
-      }
-
-      if (currentCopy) {
-        const currentSelection = nextExam.scannedCopies.find((copy) => copy.id === currentCopy.id);
-
-        if (currentSelection) {
-          return currentSelection;
+    if (row) {
+      if (examDraft.classIds) {
+        for (const classId of examDraft.classIds) {
+          await createExamClass(examId, classId);
         }
       }
+      const bank = examDraft.questionBank ?? buildDefaultQuestionBank(examDraft.questions);
+      for (const q of bank) {
+        await upsertExamQuestion(examId, q.number, { correct_answers: q.correctAnswers, points: q.points });
+      }
+      setSelectedExam({ ...row, questionBank: bank, scannedCopies: [], copies: 0 });
+    }
+  };
 
-      return nextExam.scannedCopies[0] ?? null;
+  const updateExam = async (updatedExam: Exam) => {
+    await updateExamRow(updatedExam.id, {
+      name: updatedExam.name,
+      subject: updatedExam.subject,
+      class_name: updatedExam.className,
+      professor_id: updatedExam.professorId || null,
+      date: updatedExam.date,
+      questions: updatedExam.questions,
+      status: updatedExam.status,
+    });
+    const oldExam = examsData.find((e) => e.id === updatedExam.id);
+    const oldClassIds = oldExam?.classIds ?? [];
+    const newClassIds = updatedExam.classIds ?? [];
+    for (const classId of oldClassIds) {
+      if (!newClassIds.includes(classId)) {
+        await removeExamClass(updatedExam.id, classId);
+      }
+    }
+    for (const classId of newClassIds) {
+      if (!oldClassIds.includes(classId)) {
+        await createExamClass(updatedExam.id, classId);
+      }
+    }
+    if (updatedExam.questionBank) {
+      for (const q of updatedExam.questionBank) {
+        await upsertExamQuestion(updatedExam.id, q.number, { correct_answers: q.correctAnswers, points: q.points });
+      }
+    }
+    const oldCopies = selectedExamCopies;
+    const newCopies = updatedExam.scannedCopies ?? [];
+    const newCopyIds = new Set(newCopies.map((c) => c.id));
+    for (const oldCopy of oldCopies) {
+      if (!newCopyIds.has(oldCopy.id)) {
+        await removeScannedCopyRow(oldCopy.id);
+      }
+    }
+    for (const copy of newCopies) {
+      const existing = oldCopies.find((c) => c.id === copy.id);
+      if (existing) {
+        await updateScannedCopyRow(copy.id, {
+          review_status: copy.reviewStatus,
+          calculated_score: copy.calculatedScore,
+          detected_answers: copy.detectedAnswers,
+          detected_answers_count: copy.detectedAnswersCount,
+          annotated_image_url: copy.annotatedImageUri ?? null,
+          ai_confidence: copy.aiConfidence,
+        });
+      }
+    }
+    setSelectedExam(updatedExam);
+    setSelectedScannedCopy((currentCopy) => {
+      if (!updatedExam.scannedCopies?.length) return null;
+      if (currentCopy) {
+        const found = updatedExam.scannedCopies.find((copy) => copy.id === currentCopy.id);
+        if (found) return found;
+      }
+      return updatedExam.scannedCopies[0] ?? null;
     });
   };
 
-  const deleteExam = (examId: string) => {
-    setExamsData((currentExams) => currentExams.filter((exam) => exam.id !== examId));
+  const deleteExam = async (examId: string) => {
+    for (const copy of selectedExamCopies.filter((c) => c.examId === examId)) {
+      await removeScannedCopyRow(copy.id);
+    }
+    setSelectedExamCopies((current) => current.filter((c) => c.examId !== examId));
+    await removeExam(examId);
     setSelectedExam((currentExam) => (currentExam?.id === examId ? null : currentExam));
     setSelectedScannedCopy(null);
   };
 
-  const registerExamScan = (draft?: ScannedCopyDraft) => {
-    if (!selectedExam) {
-      return null;
-    }
+  const registerExamScan = (draft?: ScannedCopyDraft): ScannedCopy | null => {
+    if (!selectedExam) return null;
 
-    console.log(
-      '[App] registerExamScan: examId=%s existingCopies=%d',
-      selectedExam.id,
-      selectedExam.scannedCopies?.length ?? 0,
-    );
-
-    const existingCopies = selectedExam.scannedCopies ?? [];
+    const existingCopies = selectedExamCopies;
     const nextCopyNumber = existingCopies.length + 1;
     const detectedAnswers =
       draft?.detectedAnswers ??
       draft?.omrResult?.answers?.map((answer) => answer.answer ?? '') ??
-      buildMockDetectedAnswers(selectedExam.questions).map((answers) => answers.join('+'));
-      
+      Array.from({ length: selectedExam.questions }, () => '');
+
     let computedScore = draft?.calculatedScore ?? '--';
     const bank = selectedExam.questionBank;
     if ((computedScore === '--' || !computedScore) && bank && detectedAnswers.length > 0) {
@@ -971,59 +947,49 @@ export function CorrectAiApp() {
         if (studentAns && q.correctAnswers.length > 0) {
           const studentParts = studentAns.split('+').sort().join('+');
           const correctParts = [...q.correctAnswers].sort().join('+');
-          if (studentParts === correctParts) {
-            earned += q.points;
-          }
+          if (studentParts === correctParts) earned += q.points;
         }
       });
-      if (possible > 0) {
-        computedScore = `${earned}/${possible}`;
-      }
+      if (possible > 0) computedScore = `${earned}/${possible}`;
     }
 
-    const confidenceLevels = [28, 94, 91, 61, 83, 74, 68, 88];
-    const names = ['Non identifié', 'Khawla Lali', 'Aicha Zeraodi', 'Halima Fouti', 'Yanis Ziani', 'Nadia Belaid'];
-    const matricules = ['0', '14365', '33624', '10390', '1944', '1951'];
+    const studentId = (() => {
+      const mat = draft?.ocrResult?.matricule?.trim() || draft?.matricule?.trim() || '';
+      return mat ? studentsData.find((s) => s.matricule === mat)?.id : undefined;
+    })();
+    const className = selectedExam.classIds?.length
+      ? classNamesFromIds(selectedExam.classIds, classesWithCounts).join(', ')
+      : draft?.ocrResult?.className?.trim() || draft?.className?.trim() || selectedExam.className;
+
     const nextCopy: ScannedCopy = cloneScannedCopy({
       id: `copy-${selectedExam.id}-${Date.now().toString(36)}-${nextCopyNumber}`,
       examId: selectedExam.id,
       examName: selectedExam.name,
-      studentId: (() => {
-        const mat = draft?.ocrResult?.matricule?.trim() || draft?.matricule?.trim() || '';
-        return mat ? studentsData.find((s) => s.matricule === mat)?.id : undefined;
-      })(),
-      studentName: draft?.ocrResult?.name?.trim() || draft?.studentName?.trim() || 'À extraire plus tard',
-      matricule: draft?.ocrResult?.matricule?.trim() || draft?.matricule?.trim() || 'À extraire plus tard',
-      className: selectedExam.classIds?.length
-        ? classNamesFromIds(selectedExam.classIds, classesWithCounts).join(', ')
-        : draft?.ocrResult?.className?.trim() || draft?.className?.trim() || selectedExam.className,
+      studentId,
+      studentName: draft?.ocrResult?.name?.trim() || draft?.studentName?.trim() || 'A extraire',
+      matricule: draft?.ocrResult?.matricule?.trim() || draft?.matricule?.trim() || 'A extraire',
+      className,
       scannedAt: new Date().toISOString(),
       establishmentId: selectedExam.establishmentId ?? '',
       imageUri: draft?.imageUri,
       annotatedImageUri: draft?.annotatedImageUri,
-      aiConfidence: draft?.aiConfidence ?? confidenceLevels[(nextCopyNumber - 1) % confidenceLevels.length],
+      aiConfidence: draft?.aiConfidence ?? 0,
       reviewStatus: 'DETECTED',
       detectedAnswers,
       detectedAnswersCount: draft?.detectedAnswersCount ?? detectedAnswers.length,
       calculatedScore: computedScore,
       ocrResult: draft?.ocrResult
-        ? {
-            ...draft.ocrResult,
-            missingFields: [...draft.ocrResult.missingFields],
-          }
+        ? { ...draft.ocrResult, missingFields: [...draft.ocrResult.missingFields] }
         : {
             extracted: true,
-            name: draft?.studentName?.trim() || 'À extraire plus tard',
-            matricule: draft?.matricule?.trim() || 'À extraire plus tard',
-            className: draft?.className?.trim() || selectedExam.className,
-            confidence: draft?.aiConfidence ?? confidenceLevels[(nextCopyNumber - 1) % confidenceLevels.length],
+            name: draft?.studentName?.trim() || 'A extraire',
+            matricule: draft?.matricule?.trim() || 'A extraire',
+            className,
+            confidence: draft?.aiConfidence ?? 0,
             missingFields: [],
           },
       omrResult: draft?.omrResult
-        ? {
-            ...draft.omrResult,
-            answers: draft.omrResult.answers.map((answer) => ({ ...answer })),
-          }
+        ? { ...draft.omrResult, answers: draft.omrResult.answers.map((a) => ({ ...a })) }
         : {
             detected: detectedAnswers.length > 0,
             answers: detectedAnswers.map((answer, index) => ({
@@ -1032,205 +998,160 @@ export function CorrectAiApp() {
               confidence: answer ? 82 : 0,
             })),
           },
-      metadata: {
-        source: 'scanner',
-        processedAt: new Date().toISOString(),
-        ...(draft?.metadata ?? {}),
-      },
+      metadata: { source: 'scanner', processedAt: new Date().toISOString(), ...(draft?.metadata ?? {}) },
     });
-    const nextScannedCopies = [...existingCopies, nextCopy];
-    const nextExam = cloneExam({
-      ...selectedExam,
-      copies: nextScannedCopies.length,
-      scannedCopies: nextScannedCopies,
-    });
-    const persistedCopy = nextExam.scannedCopies?.[nextExam.scannedCopies.length - 1] ?? nextCopy;
 
-    setExamsData((currentExams) => currentExams.map((exam) => (exam.id === nextExam.id ? nextExam : exam)));
-    setSelectedExam(nextExam);
-    setSelectedScannedCopy(persistedCopy);
+    setSelectedExamCopies((current) => [...current, nextCopy]);
+    setSelectedScannedCopy(nextCopy);
 
-    console.log(
-      '[App] registerExamScan: persistedCopyId=%s totalCopies=%d student=%s matricule=%s status=%s',
-      persistedCopy.id,
-      nextExam.scannedCopies?.length ?? 0,
-      persistedCopy.studentName,
-      persistedCopy.matricule,
-      persistedCopy.reviewStatus,
-    );
+    (async () => {
+      const copyRow = await createScannedCopyRow({
+        exam_id: selectedExam.id,
+        exam_name: selectedExam.name,
+        student_id: studentId ?? null,
+        student_name: nextCopy.studentName,
+        matricule: nextCopy.matricule,
+        class_name: className,
+        establishment_id: selectedExam.establishmentId || null,
+        ai_confidence: nextCopy.aiConfidence,
+        review_status: 'DETECTED',
+        detected_answers: detectedAnswers,
+        detected_answers_count: nextCopy.detectedAnswersCount,
+        calculated_score: computedScore,
+        image_url: draft?.imageUri ?? null,
+        annotated_image_url: draft?.annotatedImageUri ?? null,
+        metadata: { source: 'scanner', processedAt: new Date().toISOString(), ...(draft?.metadata ?? {}) },
+      });
+      if (copyRow) {
+        const ocrData = nextCopy.ocrResult;
+        if (ocrData) {
+          await insertOcrResult({
+            copy_id: copyRow.id, extracted: ocrData.extracted, name: ocrData.name,
+            matricule: ocrData.matricule, class_name: ocrData.className,
+            confidence: ocrData.confidence, missing_fields: ocrData.missingFields,
+          });
+        }
+        if (nextCopy.omrResult) {
+          await insertOmrResult(
+            { copy_id: copyRow.id, detected: nextCopy.omrResult.detected },
+            nextCopy.omrResult.answers.map((a) => ({
+              omr_result_id: '', question_number: a.question, answer: a.answer, confidence: a.confidence,
+            })),
+          );
+        }
+      }
+    })();
 
-    return persistedCopy;
+    return nextCopy;
   };
 
-  const registerAnswerKeyScan = () => {
-    if (!selectedExam) {
-      return;
+  const updateScannedCopy = async (copy: ScannedCopy) => {
+    await updateScannedCopyRow(copy.id, {
+      review_status: copy.reviewStatus,
+      calculated_score: copy.calculatedScore,
+      detected_answers: copy.detectedAnswers,
+      detected_answers_count: copy.detectedAnswersCount,
+      annotated_image_url: copy.annotatedImageUri ?? null,
+      ai_confidence: copy.aiConfidence,
+    });
+    setSelectedExamCopies((current) =>
+      current.map((c) => (c.id === copy.id ? copy : c)),
+    );
+    if (selectedExam) {
+      const updatedCopies = selectedExamCopies.map((c) => (c.id === copy.id ? copy : c));
+      setSelectedExam({ ...selectedExam, scannedCopies: updatedCopies });
     }
+    setSelectedScannedCopy(copy);
+  };
 
-    const detectedAnswers = buildMockDetectedAnswers(selectedExam.questions);
+  const deleteScannedCopy = async (copyId: string) => {
+    await removeScannedCopyRow(copyId);
+    setSelectedExamCopies((current) => current.filter((c) => c.id !== copyId));
+    if (selectedExam) {
+      const updatedCopies = (selectedExam.scannedCopies ?? []).filter((c) => c.id !== copyId);
+      setSelectedExam({ ...selectedExam, scannedCopies: updatedCopies });
+    }
+    setSelectedScannedCopy(null);
+  };
+
+  const registerAnswerKeyScan = async (detectedAnswers: string[]) => {
+    if (!selectedExam) return;
     const currentQuestionBank = selectedExam.questionBank ?? buildDefaultQuestionBank(selectedExam.questions);
-    const nextExam = cloneExam({
-      ...selectedExam,
-      questionBank: currentQuestionBank.map((question, index) => ({
+    for (const question of currentQuestionBank) {
+      const idx = question.number - 1;
+      const rawAnswer = detectedAnswers[idx] ?? '';
+      const answers = rawAnswer ? rawAnswer.split('+') : [];
+      await upsertExamQuestion(selectedExam.id, question.number, { correct_answers: answers });
+    }
+    const updatedBank = currentQuestionBank.map((question, index) => {
+      const rawAnswer = detectedAnswers[index] ?? '';
+      return {
         ...question,
-        correctAnswers: detectedAnswers[index] ? [...detectedAnswers[index]] : [],
-        detectedAnswers: detectedAnswers[index] ? [...detectedAnswers[index]] : [],
-      })),
+        correctAnswers: rawAnswer ? rawAnswer.split('+') : [],
+        detectedAnswers: rawAnswer ? [rawAnswer] : [],
+      };
     });
-
-    setExamsData((currentExams) => currentExams.map((exam) => (exam.id === nextExam.id ? nextExam : exam)));
-    setSelectedExam(nextExam);
+    setSelectedExam({ ...selectedExam, questionBank: updatedBank });
   };
 
-  const createClass = (className: string) => {
+  const createClass = async (className: string) => {
     const nextName = className.trim();
-    if (!nextName) {
-      return;
-    }
-
-    const nextClass: ClassRoom = {
-      id: `class-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 6)}`,
-      name: nextName,
-      exams: 0,
-      students: 0,
-      establishmentId: loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? '',
-    };
-
-    setClassesData((currentClasses) => [...currentClasses, nextClass]);
+    if (!nextName) return;
+    const estId = loggedInProfessor?.establishmentId ?? loggedInAdmin?.establishmentId ?? '';
+    await createClassRow({ name: nextName, establishment_id: estId });
   };
 
-  const updateClass = (updatedClass: ClassRoom) => {
-    const nextClass = cloneClass(updatedClass);
-    const previousClass = classesData.find((classItem) => classItem.id === nextClass.id);
-    const nextClasses = classesData.map((classItem) => (classItem.id === nextClass.id ? nextClass : classItem));
-
-    setClassesData(nextClasses.map(cloneClass));
-    setSelectedClass((currentClass) => (currentClass?.id === nextClass.id ? nextClass : currentClass));
-
-    if (!previousClass) {
-      return;
-    }
-
-    if (previousClass.name !== nextClass.name) {
-      setExamsData((currentExams) =>
-        currentExams.map((exam) => ({
-          ...exam,
-          classIds: exam.classIds ? [...exam.classIds] : exam.classIds,
-          className: exam.classIds?.length
-            ? classNamesFromIds(exam.classIds, nextClasses).join(', ')
-            : rewriteDelimitedClassText(exam.className, previousClass, nextClass.name),
-          scannedCopies: exam.scannedCopies?.map((copy) => rewriteScannedCopyClassRefs(copy, previousClass, nextClass.name)),
-        })),
-      );
-      setStudentsData((currentStudents) =>
-        currentStudents.map((student) => ({
-          ...student,
-          classes: rewriteStudentClassRefs(student.classes, previousClass, nextClass.name),
-        })),
-      );
-      setSelectedStudent((currentStudent) =>
-        currentStudent
-          ? {
-              ...currentStudent,
-              classes: rewriteStudentClassRefs(currentStudent.classes, previousClass, nextClass.name),
-            }
-          : currentStudent,
-      );
-      setSelectedExam((currentExam) =>
-        currentExam
-          ? {
-              ...currentExam,
-              classIds: currentExam.classIds ? [...currentExam.classIds] : currentExam.classIds,
-              className: currentExam.classIds?.length
-                ? classNamesFromIds(currentExam.classIds, nextClasses).join(', ')
-                : rewriteDelimitedClassText(currentExam.className, previousClass, nextClass.name),
-              scannedCopies: currentExam.scannedCopies?.map((copy) => rewriteScannedCopyClassRefs(copy, previousClass, nextClass.name)),
-            }
-          : currentExam,
-      );
-      setSelectedScannedCopy((currentCopy) =>
-        currentCopy ? rewriteScannedCopyClassRefs(currentCopy, previousClass, nextClass.name) : currentCopy,
-      );
-    }
+  const updateClass = async (updatedClass: ClassRoom) => {
+    await updateClassRow(updatedClass.id, { name: updatedClass.name });
+    setSelectedClass(updatedClass);
   };
 
-  const deleteClass = (classId: string) => {
-    const previousClass = classesData.find((classItem) => classItem.id === classId);
-    if (!previousClass) {
-      return;
-    }
-
-    const nextClasses = classesData.filter((classItem) => classItem.id !== classId);
-
-    setClassesData(nextClasses.map(cloneClass));
+  const deleteClass = async (classId: string) => {
+    await removeClass(classId);
     setSelectedClass((currentClass) =>
-      currentClass?.id === classId ? (nextClasses[0] ? cloneClass(nextClasses[0]) : null) : currentClass,
-    );
-    setExamsData((currentExams) =>
-      currentExams.map((exam) => {
-        const nextClassIds = exam.classIds?.filter((value) => value !== classId);
-
-        return {
-          ...exam,
-          classIds: nextClassIds?.length ? nextClassIds : undefined,
-          className: nextClassIds?.length
-            ? classNamesFromIds(nextClassIds, nextClasses).join(', ')
-            : rewriteDelimitedClassText(exam.className, previousClass),
-          scannedCopies: exam.scannedCopies?.map((copy) => rewriteScannedCopyClassRefs(copy, previousClass)),
-        };
-      }),
-    );
-    setStudentsData((currentStudents) =>
-      currentStudents.map((student) => ({
-        ...student,
-        classes: rewriteStudentClassRefs(student.classes, previousClass),
-        classIds: rewriteStudentClassIdRefs(student.classIds, previousClass),
-      })),
-    );
-    setSelectedStudent((currentStudent) =>
-      currentStudent
-        ? {
-            ...currentStudent,
-            classes: rewriteStudentClassRefs(currentStudent.classes, previousClass),
-            classIds: rewriteStudentClassIdRefs(currentStudent.classIds, previousClass),
-          }
-        : currentStudent,
-    );
-    setSelectedExam((currentExam) =>
-      currentExam
-        ? {
-            ...currentExam,
-            classIds: currentExam.classIds?.filter((value) => value !== classId) || undefined,
-            className:
-              currentExam.classIds?.filter((value) => value !== classId)?.length
-                ? classNamesFromIds(currentExam.classIds.filter((value) => value !== classId), nextClasses).join(', ')
-                : rewriteDelimitedClassText(currentExam.className, previousClass),
-            scannedCopies: currentExam.scannedCopies?.map((copy) => rewriteScannedCopyClassRefs(copy, previousClass)),
-          }
-        : currentExam,
-    );
-    setSelectedScannedCopy((currentCopy) =>
-      currentCopy ? rewriteScannedCopyClassRefs(currentCopy, previousClass) : currentCopy,
+      currentClass?.id === classId ? (classesData[0] ?? null) : currentClass,
     );
   };
 
   if (!institutionCheck.allowed && loggedInRole && loggedInRole !== 'super_admin') {
     return (
       <InstitutionUnavailableScreen
-        message={getBlockedMessage(institutionCheck.reason!)}
-        onReturnToLogin={() => {
-          setLoggedInUserId(null);
-          setLoggedInRole(null);
-          setAdminEstablishmentId(undefined);
-          setScreen('login');
-        }}
+        message={institutionCheck.reason ? getBlockedMessage(institutionCheck.reason) : 'Accès refusé.'}
+        onReturnToLogin={handleLogout}
       />
     );
   }
 
-  switch (screen) {
-    case 'splash':
-      return <SplashScreen onNavigate={navigate} />;
+  const isAuthScreen = screen === 'splash' || screen === 'login' || screen === 'signup' || screen === 'forgot-password';
+
+  if (loading && !isAuthScreen) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FC' }}>
+        <ActivityIndicator size="large" color="#4A90D9" />
+        <Text style={{ marginTop: 16, fontSize: 16, color: '#6B7280' }}>Chargement...</Text>
+      </View>
+    );
+  }
+
+  if (error && !isAuthScreen) {
+    return (
+      <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#F8F9FC', padding: 32 }}>
+        <Ionicons name="alert-circle-outline" size={56} color="#EF4444" />
+        <Text style={{ marginTop: 16, fontSize: 17, fontWeight: '600', color: '#1F2937', textAlign: 'center' }}>Erreur de chargement</Text>
+        <Text style={{ marginTop: 8, fontSize: 14, color: '#6B7280', textAlign: 'center' }}>{error}</Text>
+        <Pressable
+          onPress={refetchAll}
+          style={({ pressed }) => [{ marginTop: 24, backgroundColor: '#4A90D9', paddingHorizontal: 24, paddingVertical: 12, borderRadius: 12 }, pressed && { opacity: 0.8 }]}>
+          <Text style={{ color: '#fff', fontSize: 15, fontWeight: '600' }}>Réessayer</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  const renderScreen = () => {
+    switch (screen) {
+      case 'splash':
+        return <SplashScreen onNavigate={navigate} />;
     case 'forgot-password':
       return <ForgotPasswordScreen onNavigate={navigate} />;
     case 'signup':
@@ -1244,7 +1165,7 @@ export function CorrectAiApp() {
           copiesCount={totalCopies}
           establishmentsData={establishmentsData}
           examsCount={examsData.length}
-          loggedInSuperAdmin={loggedInRole === 'super_admin' && loggedInUserId === superAdminUser.id ? superAdminUser : undefined}
+          loggedInSuperAdmin={loggedInSuperAdmin}
           onNavigate={navigate}
           onSelectEstablishment={setSelectedEstablishment}
           professorsData={professorsData}
@@ -1356,9 +1277,9 @@ export function CorrectAiApp() {
         <SuperAdminAccountScreen
           activeTab={activeTab}
           establishmentsData={establishmentsData}
-          loggedInSuperAdmin={loggedInRole === 'super_admin' && loggedInUserId === superAdminUser.id ? superAdminUser : undefined}
+          loggedInSuperAdmin={loggedInSuperAdmin}
           onNavigate={navigate}
-          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }}
+          onLogout={handleLogout}
         />
       );
     case 'admin-home':
@@ -1417,7 +1338,7 @@ export function CorrectAiApp() {
         <AdminAccountScreen
           activeTab={activeTab}
           onNavigate={navigate}
-          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }}
+          onLogout={handleLogout}
           adminsData={adminsData}
           selectedAdmin={loggedInAdmin ?? selectedAdmin}
         />
@@ -1452,7 +1373,7 @@ export function CorrectAiApp() {
           onNavigate={navigate}
           selectedStudent={selectedStudentForRender}
           studentsData={professorStudents}
-          previousScreen={previousScreenRef.current}
+          previousScreen={previousScreen}
         />
       );
     case 'professor-student-edit':
@@ -1476,7 +1397,7 @@ export function CorrectAiApp() {
           onNavigate={navigate}
           selectedClass={selectedClassForRender}
           studentsData={professorStudents}
-          previousScreen={previousScreenRef.current}
+          previousScreen={previousScreen}
         />
       );
     case 'professor-classes':
@@ -1523,7 +1444,7 @@ export function CorrectAiApp() {
           onUpdateExam={updateExam}
           selectedExam={selectedExamForRender}
           selectedClass={selectedClassForRender}
-          previousScreen={previousScreenRef.current}
+          previousScreen={previousScreen}
         />
       );
     case 'professor-exam-menu':
@@ -1645,7 +1566,7 @@ export function CorrectAiApp() {
           activeTab={activeTab}
           classesData={professorClasses}
           examsData={professorExams}
-          onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }}
+          onLogout={handleLogout}
           onNavigate={navigate}
           onUpdateProfessor={updateProfessor}
           professorsData={professorsData}
@@ -1654,17 +1575,24 @@ export function CorrectAiApp() {
         />
       );
     case 'student-home':
-      return <StudentHomeScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
+      return <StudentHomeScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={handleLogout} />;
     case 'student-exams':
-      return <StudentExamsScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
+      return <StudentExamsScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={handleLogout} />;
     case 'student-exam-result':
-      return <StudentExamResultScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
+      return <StudentExamResultScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={handleLogout} />;
     case 'student-report':
-      return <StudentReportScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
+      return <StudentReportScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={handleLogout} />;
     case 'student-profile':
-      return <StudentProfileScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={() => { setLoggedInUserId(null); setLoggedInRole(null); setAdminEstablishmentId(undefined); navigate('login'); }} />;
+      return <StudentProfileScreen activeTab={activeTab} establishmentsData={establishmentsData} examsData={studentExams} onNavigate={navigate} onUpdateStudent={updateStudent} selectedStudent={loggedInStudent ?? selectedStudentForRender} studentsData={studentStudents} selectedExam={selectedExamForRender} onSelectExam={setSelectedExam} onLogout={handleLogout} />;
     case 'login':
     default:
       return <LoginScreen onLogin={login} onNavigate={navigate} />;
-  }
+    }
+  };
+
+  return (
+    <DataRefreshProvider value={{ onRefresh: refetchAll, refreshing: loading }}>
+      {renderScreen()}
+    </DataRefreshProvider>
+  );
 }

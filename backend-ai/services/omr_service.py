@@ -113,10 +113,10 @@ def detect_bubbles(image_bytes: bytes, questions: int = 20) -> list[BubbleResult
         ))
         print(f"[OMR] Q{q_idx+1}: {detected_answer_str or '-'} (best={fills[0][1]:.2f} @ {_LABELS[fills[0][0]]}, 2nd={fills[1][1]:.2f})")
 
-    # Save debug image
-    import os
-    debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
-    os.makedirs(debug_dir, exist_ok=True)
-    cv2.imwrite(os.path.join(debug_dir, "omr_grid_debug.jpg"), debug_img)
+    # Save debug image only when CORRECTAI_DEBUG=true
+    if os.getenv("CORRECTAI_DEBUG", "false").lower() == "true":
+        debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        cv2.imwrite(os.path.join(debug_dir, "omr_grid_debug.jpg"), debug_img)
 
     return results

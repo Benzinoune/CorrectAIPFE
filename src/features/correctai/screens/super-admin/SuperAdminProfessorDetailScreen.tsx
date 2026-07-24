@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 
-import { Avatar, Card, Icon, Icons, InfoRow, PrimaryButton, ScreenFrame, StatGrid, StatusPill } from '@/features/correctai/components/ui';
+import { Avatar, Card, EmptyState, Icon, Icons, InfoRow, PrimaryButton, ScreenFrame, StatGrid, StatusPill } from '@/features/correctai/components/ui';
 import type { ProfessorStatus } from '@/features/correctai/types';
 import { SuperAdminScreenProps, statusTone, styles } from './shared';
 
@@ -12,7 +12,13 @@ export function SuperAdminProfessorDetailScreen({
   onDeleteProfessor,
 }: SuperAdminScreenProps) {
   const professor = selectedProfessor;
-  if (!professor) return null;
+  if (!professor) {
+    return (
+      <ScreenFrame compactHeader onBack={() => onNavigate('super-admin-professors')} title="Détails Professeur">
+        <EmptyState icon={Icons.profile} title="Aucun professeur" subtitle="Sélectionnez un professeur pour voir ses détails." />
+      </ScreenFrame>
+    );
+  }
   const [status, setStatus] = useState<ProfessorStatus>(professor.status);
 
   const cycleStatus = () => {
@@ -48,13 +54,6 @@ export function SuperAdminProfessorDetailScreen({
       <View style={styles.actions}>
         <PrimaryButton icon={Icons.shield} onPress={cycleStatus} variant="outline">
           Changer statut ({status === 'ACTIF' ? 'Suspendre' : status === 'SUSPENDU' ? 'Reactivier' : 'Activer'})
-        </PrimaryButton>
-        <PrimaryButton icon={Icons.key} variant="outline" tone="warning" onPress={() => {
-          const tempPassword = `tmp-${Date.now().toString(36).slice(-6)}`;
-          Alert.alert('Mot de passe reinitialise', `Le mot de passe de ${professor.name} a ete reinitialise a "${tempPassword}".`);
-          onUpdateProfessor?.({ ...professor, password: tempPassword });
-        }}>
-          Reinitialiser mot de passe
         </PrimaryButton>
         <PrimaryButton icon={Icons.trash} tone="danger" variant="soft" onPress={() => {
           Alert.alert(

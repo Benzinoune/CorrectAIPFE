@@ -15,6 +15,7 @@ Pipeline per ROI:
   8. Aggregate confidence from per-word data
 """
 
+import os
 from dataclasses import dataclass, field
 from typing import Any, Optional
 
@@ -109,8 +110,7 @@ def _ocr_region(roi_bgr: np.ndarray, config: OCRConfig, psm: int, label: str = "
     processed = _preprocess_roi(roi_bgr, config)
     
     # Debug: Save the processed image for the matricule so we can see what Tesseract sees
-    if label == "matricule":
-        import os
+    if label == "matricule" and os.getenv("CORRECTAI_DEBUG", "false").lower() == "true":
         debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
         os.makedirs(debug_dir, exist_ok=True)
         cv2.imwrite(os.path.join(debug_dir, "ocr_matricule_processed.jpg"), processed)
@@ -172,20 +172,21 @@ def extract_student_info(
     conf_count = 0
 
     # ── Debug: save full warped image with ROI boxes ─────────────────────────
-    import os
-    debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
-    os.makedirs(debug_dir, exist_ok=True)
-    debug_img = image.copy()
+    _debug_enabled = os.getenv("CORRECTAI_DEBUG", "false").lower() == "true"
+    if _debug_enabled:
+        debug_dir = os.path.join(os.path.dirname(__file__), "..", "debug")
+        os.makedirs(debug_dir, exist_ok=True)
+        debug_img = image.copy()
 
-    for roi in config.rois:
-        x1 = max(0, int(roi.x * w))
-        y1 = max(0, int(roi.y * w))  # y is fraction of WIDTH for stability
-        x2 = min(w, int((roi.x + roi.w) * w))
-        y2 = min(h, int((roi.y + roi.h) * w))
-        cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 0, 255), 3)
-        cv2.putText(debug_img, roi.label, (x1, max(0, y1 - 8)),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
-    cv2.imwrite(os.path.join(debug_dir, "ocr_rois_debug.jpg"), debug_img)
+        for roi in config.rois:
+            x1 = max(0, int(roi.x * w))
+            y1 = max(0, int(roi.y * w))  # y is fraction of WIDTH for stability
+            x2 = min(w, int((roi.x + roi.w) * w))
+            y2 = min(h, int((roi.y + roi.h) * w))
+            cv2.rectangle(debug_img, (x1, y1), (x2, y2), (0, 0, 255), 3)
+            cv2.putText(debug_img, roi.label, (x1, max(0, y1 - 8)),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.9, (0, 0, 255), 2)
+        cv2.imwrite(os.path.join(debug_dir, "ocr_rois_debug.jpg"), debug_img)
 
     for roi in config.rois:
         x1 = max(0, int(roi.x * w))

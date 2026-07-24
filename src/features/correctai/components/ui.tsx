@@ -1,9 +1,10 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { StatusBar } from 'expo-status-bar';
-import { useState } from 'react';
+import { createContext, useContext, useState } from 'react';
 import type { ComponentProps, ReactNode } from 'react';
 import {
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -18,6 +19,11 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { correctAiTheme, phoneMaxWidth } from '@/features/correctai/theme';
 import type { NavItem, StatItem, TabId, Tone, UserRole } from '@/features/correctai/types';
+
+const DataRefreshContext = createContext<{ onRefresh?: () => void; refreshing?: boolean }>({});
+export function DataRefreshProvider({ value, children }: { value: { onRefresh?: () => void; refreshing?: boolean }; children: ReactNode }) {
+  return <DataRefreshContext.Provider value={value}>{children}</DataRefreshContext.Provider>;
+}
 
 type IconName = ComponentProps<typeof Ionicons>['name'];
 type SelectOption = {
@@ -155,6 +161,8 @@ type ScreenFrameProps = {
   compactHeader?: boolean;
   contentStyle?: StyleProp<ViewStyle>;
   scrollable?: boolean;
+  onRefresh?: () => void;
+  refreshing?: boolean;
 };
 
 export function ScreenFrame({
@@ -170,8 +178,13 @@ export function ScreenFrame({
   compactHeader,
   contentStyle,
   scrollable = true,
+  onRefresh,
+  refreshing = false,
 }: ScreenFrameProps) {
   const insets = useSafeAreaInsets();
+  const ctx = useContext(DataRefreshContext);
+  const effectiveOnRefresh = onRefresh ?? ctx.onRefresh;
+  const effectiveRefreshing = refreshing || ctx.refreshing || false;
   const hasTabs = Boolean(tabs?.length && activeTab && onTabPress);
   const headerHeight = compactHeader ? 72 : 100;
   const contentContainerStyle = [
@@ -221,7 +234,10 @@ export function ScreenFrame({
           <ScrollView
             style={styles.panel}
             contentContainerStyle={contentContainerStyle}
-            showsVerticalScrollIndicator={false}>
+            showsVerticalScrollIndicator={false}
+            refreshControl={
+              effectiveOnRefresh ? <RefreshControl refreshing={effectiveRefreshing} onRefresh={effectiveOnRefresh} tintColor={colors.primary} colors={[colors.primary]} /> : undefined
+            }>
             {title && greeting ? <Text style={styles.panelTitle}>{title}</Text> : null}
             {children}
           </ScrollView>
@@ -249,6 +265,16 @@ export function ScreenFrame({
           />
         ) : null}
       </View>
+    </View>
+  );
+}
+
+export function EmptyState({ icon, title, subtitle }: { icon?: IconName; title: string; subtitle?: string }) {
+  return (
+    <View style={{ alignItems: 'center', justifyContent: 'center', paddingVertical: 48, paddingHorizontal: 32 }}>
+      {icon ? <Ionicons name={icon} size={48} color="#D1D5DB" /> : null}
+      <Text style={{ marginTop: icon ? 16 : 0, fontSize: 16, fontWeight: '600', color: '#6B7280', textAlign: 'center' }}>{title}</Text>
+      {subtitle ? <Text style={{ marginTop: 6, fontSize: 14, color: '#9CA3AF', textAlign: 'center' }}>{subtitle}</Text> : null}
     </View>
   );
 }
@@ -887,20 +913,22 @@ export function FormActions({
   submitLabel = 'Enregistrer',
   cancelIcon = Icons.close,
   submitIcon = Icons.save,
+  submitting = false,
 }: {
   onCancel?: () => void;
   onSubmit?: () => void;
   submitLabel?: string;
   cancelIcon?: IconName;
   submitIcon?: IconName;
+  submitting?: boolean;
 }) {
   return (
     <View style={styles.formActions}>
       <TextButton icon={cancelIcon} onPress={onCancel} tone="neutral">
         Annuler
       </TextButton>
-      <PrimaryButton icon={submitIcon} onPress={onSubmit}>
-        {submitLabel}
+      <PrimaryButton icon={submitIcon} onPress={onSubmit} disabled={submitting}>
+        {submitting ? 'En cours...' : submitLabel}
       </PrimaryButton>
     </View>
   );

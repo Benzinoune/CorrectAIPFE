@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
-import { Field, FormActions, ScreenFrame, SectionTitle, StatusPill } from '@/features/correctai/components/ui';
+import { EmptyState, Field, FormActions, Icons, ScreenFrame, SectionTitle, StatusPill } from '@/features/correctai/components/ui';
 import type { EstablishmentStatus } from '@/features/correctai/types';
 import { SuperAdminScreenProps, statusTone, styles } from './shared';
 
@@ -12,13 +12,20 @@ export function SuperAdminEstablishmentSettingsScreen({
   onUpdateEstablishment,
 }: SuperAdminScreenProps) {
   const establishment = selectedEstablishment ?? establishmentsData[0];
-  if (!establishment) return null;
+  if (!establishment) {
+    return (
+      <ScreenFrame compactHeader onBack={() => onNavigate('super-admin-establishment-detail')} title="Paramètres">
+        <EmptyState icon={Icons.school} title="Aucun établissement" subtitle="Sélectionnez un établissement pour modifier ses paramètres." />
+      </ScreenFrame>
+    );
+  }
 
   const [name, setName] = useState(establishment.name);
   const [city, setCity] = useState(establishment.city);
   const [adminName, setAdminName] = useState(establishment.adminName);
   const [adminEmail, setAdminEmail] = useState(establishment.adminEmail);
   const [status, setStatus] = useState<EstablishmentStatus>(establishment.status);
+  const [submitting, setSubmitting] = useState(false);
 
   const cycleStatus = () => {
     setStatus((prev) => {
@@ -31,6 +38,8 @@ export function SuperAdminEstablishmentSettingsScreen({
   const statusLabel = status === 'ACTIF' ? 'Actif' : status === 'SUSPENDU' ? 'Suspendu' : 'Inactif';
 
   const submit = () => {
+    if (submitting) return;
+    setSubmitting(true);
     onUpdateEstablishment?.({
       ...establishment,
       name: name.trim() || establishment.name,
@@ -64,7 +73,7 @@ export function SuperAdminEstablishmentSettingsScreen({
         <Field autoCapitalize="words" label="Nom complet" onChangeText={setAdminName} value={adminName} />
         <Field autoCapitalize="none" keyboardType="email-address" label="Email" onChangeText={setAdminEmail} value={adminEmail} />
 
-        <FormActions onCancel={() => onNavigate('super-admin-establishment-detail')} submitLabel="Enregistrer" onSubmit={submit} />
+        <FormActions onCancel={() => onNavigate('super-admin-establishment-detail')} submitLabel="Enregistrer" onSubmit={submit} submitting={submitting} />
       </View>
     </ScreenFrame>
   );

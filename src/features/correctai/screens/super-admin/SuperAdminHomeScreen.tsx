@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { Text, View } from 'react-native';
 
 import { Card, Icon, Icons, ScreenFrame, SectionTitle, StatGrid } from '@/features/correctai/components/ui';
-import { superAdminTabs, superAdminUser } from '@/features/correctai/data/mock-data';
+import { superAdminTabs } from '@/features/correctai/data/mock-data';
 import type { StatItem } from '@/features/correctai/types';
 import { EstablishmentCard, SuperAdminScreenProps, styles } from './shared';
 
@@ -46,7 +46,7 @@ export function SuperAdminHomeScreen({
   return (
     <ScreenFrame
       activeTab={activeTab}
-      greeting={`Bonjour, ${(loggedInSuperAdmin ?? superAdminUser).name.split(' ')[0]}`}
+      greeting={`Bonjour, ${(loggedInSuperAdmin?.name ?? 'Super Admin').split(' ')[0]}`}
       onTabPress={(item) => onNavigate(item.screen)}
       tabs={superAdminTabs}>
       <Card style={styles.overviewCard}>

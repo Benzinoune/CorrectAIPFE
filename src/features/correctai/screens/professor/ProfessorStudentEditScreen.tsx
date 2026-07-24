@@ -15,7 +15,6 @@ import {
   Icons,
   PrimaryButton,
   ScreenFrame,
-  SecureField,
 } from '@/features/correctai/components/ui';
 
 
@@ -72,10 +71,8 @@ export function ProfessorStudentEditScreen({
         lastName: draftStudent.lastName,
         matricule: draftStudent.matricule,
         email: draftStudent.email,
-        password: draftStudent.password,
       },
       {
-        requirePassword: false,
         existingStudents: studentList,
         currentId: student.id,
       },
@@ -133,14 +130,6 @@ export function ProfessorStudentEditScreen({
             autoCapitalize="none"
             autoCorrect={false}
             keyboardType="email-address"
-          />
-          <SecureField
-            label="Password"
-            error={formErrors.password}
-            value={draftStudent.password}
-            onChangeText={(value) => setDraftStudent((current) => ({ ...current, password: value }))}
-            autoCapitalize="none"
-            autoCorrect={false}
           />
           <Text style={styles.readonly}>CorrectAI ID: {draftStudent.correctAiId}</Text>
         </View>

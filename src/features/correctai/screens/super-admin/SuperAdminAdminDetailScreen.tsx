@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { Alert, Text, View } from 'react-native';
 
-import { Avatar, Card, Icon, Icons, InfoRow, PrimaryButton, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
+import { Avatar, Card, EmptyState, Icon, Icons, InfoRow, PrimaryButton, ScreenFrame, StatusPill } from '@/features/correctai/components/ui';
 import type { AdminStatus } from '@/features/correctai/types';
 import { SuperAdminScreenProps, statusTone, styles } from './shared';
 
@@ -11,7 +11,13 @@ export function SuperAdminAdminDetailScreen({
   onUpdateAdmin,
   onDeleteAdmin,
 }: SuperAdminScreenProps) {
-  if (!selectedAdmin) return null;
+  if (!selectedAdmin) {
+    return (
+      <ScreenFrame compactHeader onBack={() => onNavigate('super-admin-admins')} title="Détails Admin">
+        <EmptyState icon={Icons.profile} title="Aucun administrateur" subtitle="Sélectionnez un administrateur pour voir ses détails." />
+      </ScreenFrame>
+    );
+  }
   const [currentStatus, setCurrentStatus] = useState<AdminStatus>(selectedAdmin.status);
 
   const cycleStatus = () => {
@@ -44,13 +50,6 @@ export function SuperAdminAdminDetailScreen({
       <View style={styles.actions}>
         <PrimaryButton icon={Icons.shield} onPress={cycleStatus} variant="outline">
           Changer statut ({currentStatus === 'ACTIF' ? 'Suspendre' : currentStatus === 'SUSPENDU' ? 'Reactivier' : 'Activer'})
-        </PrimaryButton>
-        <PrimaryButton icon={Icons.key} variant="outline" tone="warning" onPress={() => {
-          const tempPassword = `tmp-${Date.now().toString(36).slice(-6)}`;
-          Alert.alert('Mot de passe reinitialise', `Le mot de passe de ${selectedAdmin.name} a ete reinitialise a "${tempPassword}".`);
-          onUpdateAdmin?.({ ...selectedAdmin, password: tempPassword });
-        }}>
-          Reinitialiser mot de passe
         </PrimaryButton>
         <PrimaryButton icon={Icons.trash} tone="danger" variant="soft" onPress={() => {
           Alert.alert(
