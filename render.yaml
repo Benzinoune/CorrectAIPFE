@@ -2,8 +2,6 @@ services:
   - type: web
     name: correctai-backend-ai
     runtime: docker
-    dockerfilePath: ./backend-ai/Dockerfile
-    dockerContext: ./backend-ai
     plan: starter
     healthCheckPath: /health
     envVars:
